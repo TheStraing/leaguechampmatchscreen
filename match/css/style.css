@@ -1,0 +1,100 @@
+body {
+    margin: 0;
+    overflow: hidden;
+}
+
+#bg {
+    margin: 0;
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: -99;
+    width: 100vw;
+}
+
+#bg img {
+    width: 100vw;
+}
+
+#lowerbar {
+    position: absolute;
+    bottom: 0;
+    transform: scaleX(1.03);
+}
+
+#topbar {
+    position: absolute;
+    top: 0;
+    left: 50vw;
+    transform: translate(-50%,-23.5%) scale(1.1,1.1);
+}
+
+#topbox {
+
+    position: absolute;
+    top: 0;
+    z-index: 2;
+    width: 26.5vw;
+    left: 50vw;
+    transform: translateX(-50%);
+
+}
+
+
+#lowerbox {
+    position: absolute;
+    bottom: 0;
+    width: 30vw;
+    left: 50vw;
+    transform: translateX(-50%);
+    z-index: 2;
+}
+
+
+#middlebar {
+    position: absolute;
+    bottom: 0;
+    height: 80vh;
+    top: 50vh;
+    left: 50vw;
+    transform: translate(-50%,-50%);
+}
+
+
+.team {
+    top: 13.5%;
+    position: absolute;
+    height: 80vh;
+    width:45vw;
+}
+
+.team.right{
+    right: 0;
+}
+
+.player {
+    height: 15.5vh;
+    transform: scale(1.05,1.05);
+}
+
+.player.right {
+    float: right;
+}
+
+.teamname {
+    position: absolute;
+    top: 5vh;
+    height: 7vh;
+}
+
+.teamname.left {
+    left: 1vw;
+}
+
+.teamname.right {
+    rightembed : 1vw;
+}
+
+.teamname img {
+    height: 100%;
+}

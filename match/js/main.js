@@ -1,37 +1,51 @@
 $(document).ready(function() {
 
-    /*$('.team').find('[data-id=4]').find('.playername')[0].innerHTML*/
 
     /*$('.playername').each(function () {
-
-        $(this).on('change', function () {
-            console.log("change found");
-            var newLength = $(this).innerHTML.length;
-            var charsPerLine = 10;
-            var newEmSize = charsPerLine / newLength;
-            // var textBaseSize = 16;
-            var textBaseSize = 10;
-
-
-            // Applying ems directly was causing some weirdness, converting ems to pixels got rid of the weirdyness
-            if (newEmSize < 1) {
-                // Scale it
-                var newFontSize = newEmSize * textBaseSize;
-                // alert(newFontSize);
-                var formattedSize = "font-size:" + newFontSize + "px;";
-            } else {
-                // It fits, leave it alone
-                var newFontSize = 1;
-                var formattedSize = "font-size:" + textBaseSize + "px;";
-            }
-
-            $(this).attr('style', formattedSize);
-
+        $(this).textfill({
+            maxFontPixels: 60
         });
-
+        $(this).change(function() {
+            $(this).textfill({
+                maxFontPixels: 60, changeLineHeight: true
+            });
+        });
     });*/
 
-}
+
+
+    /*$('.team').find('[data-id=4]').find('.playername')[0].innerHTML*/
+
+    //$('.team.left [data-id=4] .playername').innerHTML = 'CIAOOOOOOO';
+    //adjustTextSize(4,false);
+
+});
+
+
+/*function adjustTextSize(id,isRight){
+    console.log('.team'+(isRight? '.right': '.left')+' [data-id='+id+'] .playername');
+    var thisData = $('.team'+(isRight? '.right': '.left')+' [data-id='+id+'] .playername')[0];
+    var newLength = thisData.innerHTML.length;
+    var charsPerLine = 10;
+    var newEmSize = charsPerLine / newLength;
+    // var textBaseSize = 16;
+    var textBaseSize = 60;
+
+
+    // Applying ems directly was causing some weirdness, converting ems to pixels got rid of the weirdyness
+    if (newEmSize < 1) {
+        // Scale it
+        var newFontSize = newEmSize * textBaseSize;
+        // alert(newFontSize);
+        var formattedSize = "font-size:" + newFontSize + "px;";
+    } else {
+        // It fits, leave it alone
+        var newFontSize = 1;
+        var formattedSize = "font-size:" + textBaseSize + "px;";
+    }
+
+    $('.team'+(isRight? '.right': '.left')+' [data-id='+id+'] .playername').attr('style', formattedSize);
+}*/
 
 /*
 

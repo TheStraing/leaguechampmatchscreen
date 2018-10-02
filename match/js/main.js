@@ -1,3 +1,5 @@
+var APIKEY = 'RGAPI-8177f7a6-a255-4f94-84d8-808957464f8f';
+
 $(document).ready(function() {
 
 
@@ -5,47 +7,56 @@ $(document).ready(function() {
         $(this).textfill({
             maxFontPixels: 60
         });
-        $(this).change(function() {
-            $(this).textfill({
-                maxFontPixels: 60, changeLineHeight: true
-            });
-        });
     });*/
 
+    $.ajax({
+
+        url: "https://euw1.api.riotgames.com/lol/summoner/v3/summoners/by-name/LaStringa?api_key="+APIKEY,
+        type : 'GET',
+        dataType:'json',
+        success : function(data) {
+            console.log(data);
+            /*$('.playername span')[0].innerHTML = data.name;*/
+            getCurrentMatchData(data.id);
+        },
+        error : function(request,error)
+        {
+            alert("Request: "+JSON.stringify(request));
+        }
+    });
 
 
     /*$('.team').find('[data-id=4]').find('.playername')[0].innerHTML*/
 
-    //$('.team.left [data-id=4] .playername').innerHTML = 'CIAOOOOOOO';
-    //adjustTextSize(4,false);
-
 });
 
 
-/*function adjustTextSize(id,isRight){
-    console.log('.team'+(isRight? '.right': '.left')+' [data-id='+id+'] .playername');
-    var thisData = $('.team'+(isRight? '.right': '.left')+' [data-id='+id+'] .playername')[0];
-    var newLength = thisData.innerHTML.length;
-    var charsPerLine = 10;
-    var newEmSize = charsPerLine / newLength;
-    // var textBaseSize = 16;
-    var textBaseSize = 60;
+function getCurrentMatchData(summonerid) {
+
+    $.ajax({
+
+        url: "https://euw1.api.riotgames.com/lol/spectator/v3/active-games/by-summoner/"+summonerid+"?api_key="+APIKEY,
+        type : 'GET',
+        dataType:'json',
+        success : function(data) {
+            console.log(data);
+            setDataIntoView(data);
+        },
+        error : function(request,error)
+        {
+            alert("Request: "+JSON.stringify(request));
+        }
+    });
+
+}
 
 
-    // Applying ems directly was causing some weirdness, converting ems to pixels got rid of the weirdyness
-    if (newEmSize < 1) {
-        // Scale it
-        var newFontSize = newEmSize * textBaseSize;
-        // alert(newFontSize);
-        var formattedSize = "font-size:" + newFontSize + "px;";
-    } else {
-        // It fits, leave it alone
-        var newFontSize = 1;
-        var formattedSize = "font-size:" + textBaseSize + "px;";
-    }
+function setDataIntoView(data) {
 
-    $('.team'+(isRight? '.right': '.left')+' [data-id='+id+'] .playername').attr('style', formattedSize);
-}*/
+
+
+}
+
 
 /*
 

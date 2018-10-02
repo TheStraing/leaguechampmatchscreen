@@ -41,6 +41,52 @@ body {
 }
 
 
+.toptextdiv {
+    color: white;
+    position: absolute;
+    top: 0.5vh;
+    width: 25vw;
+    height: 14vh;
+    left: 50vw;
+    transform: translateX(-50%);
+    font-family: "Bebas Neue";
+    z-index: 4;
+}
+
+.toptextdiv .firstline{
+    text-align: center;
+    font-size: 2vw;
+    margin: 0;
+    filter: drop-shadow(1px 1px 4px #000);
+}
+
+.toptextdiv .secondline{
+    text-align: center;
+    font-size: 5vw;
+    margin-top: -3%;
+    filter: drop-shadow(1px 1px 4px #000);
+}
+
+.lowertext {
+    color: white;
+    position: absolute;
+    bottom: 1vw;
+    width: 26.5vw;
+    height: 4vh;
+    left: 50vw;
+    transform: translateX(-50%);
+    font-family: "Bebas Neue";
+    z-index: 4;
+}
+
+.lowertext p{
+    text-align: center;
+    font-size: 2vw;
+    margin-top: 0%;
+    filter: drop-shadow(1px 1px 4px #000);
+}
+
+
 #lowerbox {
     position: absolute;
     bottom: 0;
@@ -62,10 +108,10 @@ body {
 
 
 .team {
-    top: 13.5%;
+    top: 14%;
     position: absolute;
     height: 80vh;
-    width:45vw;
+    width: 45vw;
 }
 
 .team.right{
@@ -73,14 +119,183 @@ body {
 }
 
 .player {
-    height: 15.5vh;
-    transform: scale(1.05,1.05);
+    margin-top: 2%;
+    position: relative;
+}
+
+.playername{
+    position: absolute;
+    top: 50%;
+    width: 100%;
+    height: 100%;
+    color: white;
+    font-size: 3vw;
+    font-family: "Bebas Neue";
+    transform: translateY(-50%);
+}
+
+.playername span {
+    /* text-align: -webkit-left; */
+    transform: translateY(-50%);
+    top: 50%;
+    display: inline-block;
+    position: absolute;
+    line-height: 100%;
+}
+
+.playernameright{
+    position: absolute;
+    top: 50%;
+    right: -3%;
+    width: 100%;
+    height: 100%;
+    color: white;
+    font-size: 3vw;
+    font-family: "Bebas Neue";
+    transform: translateY(-50%);
+}
+
+.playernameright span {
+    /* text-align: -webkit-left; */
+    transform: translateY(-50%) rotateY(180deg);
+    top: 50%;
+    display: inline-block;
+    position: absolute;
+    line-height: 100%;
+}
+
+.playernamebox{
+    top:50%;
+    transform: translateY(-50%);
+    position:absolute;
+    background-color: #771920;
+    width: 28%;
+    height: 60%;
+
+    box-shadow: inset 0px 0px 10px #000;
+    -webkit-box-shadow: inset 0px 0px 10px #000;
+    -moz-box-shadow: inset 0px 0px 10px #000;
+    -o-box-shadow: inset 0px 0px 10px #000;
+}
+
+.champimgbox{
+    filter: drop-shadow(-1px -1px 4px #000);
+    position: absolute;
+    background-image: url("https://cdn.communitydragon.org/latest/champion/498/splash-art/centered/skin/0.jpg");
+    background-size: cover;
+    background-position: top;
+    height: 95%;
+    width: 40%;
+    top: 50%;
+    right: 1%;
+    transform: translateY(-50%);
+
+    box-shadow: inset 0px 0px 20px #000;
+    -webkit-box-shadow: inset 0px 0px 20px #000;
+    -moz-box-shadow: inset 0px 0px 20px #000;
+    -o-box-shadow: inset 0px 0px 20px #000;
+    -webkit-mask-image: -webkit-linear-gradient(left, rgba(0,0,0,1) 26%,rgba(0,0,0,1) 50%,rgba(0,0,0,0) 100%);
+}
+
+.champimgbox img{
+    height: 100%;
+    width: 100%;
+}
+
+.smallrow {
+    position: absolute;
+    height: 30%;
+    width: 23%;
+    top: 18%;
+    left: 30%;
+
+}
+
+.smallrowsecond {
+    position: absolute;
+    height: 30%;
+    width: 23%;
+    top: 50%;
+    left: 34.6%;
+}
+
+.smallbox {
+    float: left;
+    height: 100%;
+    width: 18%;
+
+    margin-left: 2%;
+    background-size: cover;
+    background-position: center center;
+    filter: drop-shadow(1px 1px 4px #000);
+    /*box-shadow: inset 0px 0px 5px #000;
+    -webkit-box-shadow: inset 0px 0px 5px #000;
+    -moz-box-shadow: inset 0px 0px 5px #000;
+    -o-box-shadow: inset 0px 0px 5px #000;*/
+}
+
+
+.smallcolumn {
+    position: absolute;
+    width: 6.9%;
+    height: 100%;
+    top: 0%;
+    left: 51%;
+}
+
+.smallboxcolumn {
+    filter: drop-shadow(1px 1px 4px #000);
+    position: relative;
+    background-color: white;
+    width: 85%;
+    height: 43%;
+    margin-top: 8%;
+    background-size: cover;
+    background-position: center center;
+}
+
+.playerGraphics {
+    position: relative;
+    width: 47.6vw;
+    height: 13vh;
+    transform: translateX(-0.4vh);
+    border: 3px solid #771920;
+    border-radius: 7px;
+    background-color: #C1272D;
+    -webkit-mask-image: -webkit-linear-gradient(left, rgba(0,0,0,1) 26%,rgba(0,0,0,1) 80%,rgba(0,0,0,0) 100%);
+}
+
+.leftside{
+    transform: translateX(-0.4vh);
+
+}
+
+.rightside{
+    transform: rotateY(180deg) translateX(4.9vh);
+}
+
+.flipped{
+    transform: rotateY(180deg);
 }
 
 .teamname {
     position: absolute;
     top: 5vh;
     height: 7vh;
+    width: 35vw;
+    background-size: cover;
+    background-position: center center;
+    background-image: url(../graphics/teamnamebox.svg);
+}
+
+.teamname p{
+    text-align: center;
+    font-size: 2vw;
+    color: white;
+    font-family: "Bebas Neue";
+    padding-left: 1%;
+    margin-top: 2%;
+    filter: drop-shadow(0px 0px 4px #000);
 }
 
 .teamname.left {
@@ -88,30 +303,17 @@ body {
 }
 
 .teamname.right {
-    rightembed : 1vw;
+    right : 1vw;
 }
 
 .teamname img {
     height: 100%;
 }
 
-.playername{
-    position: absolute;
-    top: 42%;
-    width: 20%;
-    height: 34%;
-    color: white;
-    font-size: 55px;
-    font-family: "Bebas Neue";
-    transform: translateY(-19%);
-}
+
 
 .playername.left{
-    margin-left: 3.3%;
-}
-
-.playername.right{
-
+    padding-left: 1%;
 }
 
 .playername span {
@@ -120,4 +322,7 @@ body {
     display: inline-block;
     position: absolute;
     line-height: 100%;
+    filter: drop-shadow(1px 1px 4px #000);
 }
+
+

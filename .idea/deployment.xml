@@ -6,6 +6,7 @@
         <serverdata>
           <mappings>
             <mapping deploy="\riot" local="$PROJECT_DIR$/match/proxyserver" web="/riot/" />
+            <mapping deploy="\match" local="$PROJECT_DIR$/match" web="\match\" />
           </mappings>
         </serverdata>
       </paths>

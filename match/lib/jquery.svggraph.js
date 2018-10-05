@@ -1,1188 +1,544 @@
-﻿/* http://keith-wood.name/svg.html
-   SVG graphing extension for jQuery v1.5.0.
-   Written by Keith Wood (kbwood{at}iinet.com.au) August 2007.
-   Available under the MIT (http://keith-wood.name/licence.html) license. 
-   Please attribute the author if you use it. */
-
-(function($) { // Hide scope, no $ conflict
-
-$.svg.addExtension('graph', SVGGraph);
-
-$.svg.graphing = new SVGGraphing();
-
-/** The SVG graphing manager.
-	<p>Use the singleton instance of this class, $.svg.graphing, 
-	to interact with the SVG graphing functionality.</p>
-	@module SVGGraphing */
-function SVGGraphing() {
-	this.regional = [];
-	this.regional[''] = {percentageText: 'Percentage'};
-	this.region = this.regional[''];
-}
-
-$.extend(SVGGraphing.prototype, {
-	_chartTypes: [],
-
-	/** Add a new chart rendering type to the package.
-		<p>The rendering object must implement the following functions: <code>getTitle()</code>,
-		<code>getDescription()</code>, <code>getOptions()</code>, <code>drawChart(graph)</code>.</p>
-		@param id {string} The ID of this graph renderer.
-		@param chartType {object} The object implementing this chart type. */
-	addChartType: function(id, chartType) {
-		this._chartTypes[id] = chartType;
-	},
-
-	/** Retrieve the list of chart types.
-		@return {object[]} The array of chart types indexed by ID */
-	chartTypes: function() {
-		return this._chartTypes;
-	}
-});
-
-/** The SVG graph manager.
-	<p>Use the singleton instance of this class, $.svg.graph, 
-	to interact with the SVG graph functionality.</p>
-	@module SVGGraph */
-function SVGGraph(wrapper) {
-	this._wrapper = wrapper; // The attached SVG wrapper object
-	this._drawNow = false; // True for immediate update, false to wait for redraw call
-	for (var id in $.svg.graphing._chartTypes) {
-		this._chartType = $.svg.graphing._chartTypes[id]; // Use first graph renderer
-		break;
-	}
-	this._chartOptions = {}; // Extra options for the graph type
-	// The graph title and settings
-	this._title = {value: '', offset: 25, settings: {textAnchor: 'middle'}};
-	this._area = [0.1, 0.1, 0.8, 0.9]; // The chart area: left, top, right, bottom, > 1 in pixels, <= 1 as proportion
-	this._chartFormat = {fill: 'none', stroke: 'black'}; // The formatting for the chart area
-	this._gridlines = []; // The formatting of the x- and y-gridlines
-	this._series = []; // The series to be plotted, each is an object
-	this._onstatus = null; // The callback function for status updates
-	this._chartCont = this._wrapper.svg(0, 0, 0, 0, {class_: 'svg-graph'}); // The main container for the graph
-	
-	this.xAxis = new SVGGraphAxis(this); // The main x-axis
-	this.xAxis.title('', 40);
-	this.yAxis = new SVGGraphAxis(this); // The main y-axis
-	this.yAxis.title('', 40);
-	this.x2Axis = null; // The secondary x-axis
-	this.y2Axis = null; // The secondary y-axis
-	this.legend = new SVGGraphLegend(this); // The chart legend
-	this._drawNow = true;
-}
-
-$.extend(SVGGraph.prototype, {
-
-	/* Useful indexes. */
-	/** Index in a dimensions array for x-coordinate. */
-	X: 0,
-	/** Index in a dimensions array for y-coordinate. */
-	Y: 1,
-	/** Index in a dimensions array for width. */
-	W: 2,
-	/** Index in a dimensions array for height. */
-	H: 3,
-	/** Index in an area array for left x-coordinate. */
-	L: 0,
-	/** Index in an area array for top y-coordinate. */
-	T: 1,
-	/** Index in an area array for right x-coordinate. */
-	R: 2,
-	/** Index in an area array for bottom y-coordinate. */
-	B: 3,
-
-	/* Standard percentage axis. */
-	_percentageAxis: new SVGGraphAxis(this, $.svg.graphing.region.percentageText, 0, 100, 10, 0),
-
-	/** Set or retrieve the container for the graph.
-		@param cont {SVGElement} The container for the graph.
-		@return {SVGGraph|SVGElement} This graph object or the current container (if no parameters). */
-	container: function(cont) {
-		if (arguments.length === 0) {
-			return this._chartCont;
-		}
-		this._chartCont = cont;
-		return this;
-	},
-
-	/** Set or retrieve the type of chart to be rendered.
-		<p>See <code>$.svg.graphing.getChartTypes()</code> for the list of available types.</p>
-		@param id {string} The ID of the chart type.
-		@param [options] {object} Additional settings for this chart type.
-		@return {SVGGraph|string} This graph object or the chart type (if no parameters).
-		@deprecated Use <code>type()</code>. */
-	chartType: function(id, options) {
-		return (arguments.length === 0 ? this.type() : this.type(id, options));
-	},
-
-	/** Set or retrieve the type of chart to be rendered.
-		<p>See <code>$.svg.graphing.getChartTypes()</code> for the list of available types.</p>
-		@param id {string} The ID of the chart type.
-		@param [options] {object} Additional settings for this chart type.
-		@return {SVGGraph|string} This graph object or the chart type (if no parameters). */
-	type: function(id, options) {
-		if (arguments.length === 0) {
-			return this._chartType;
-		}
-		var chartType = $.svg.graphing._chartTypes[id];
-		if (chartType) {
-			this._chartType = chartType;
-			this._chartOptions = $.extend({}, options || {});
-		}
-		this._drawGraph();
-		return this;
-	},
-
-	/** Set or retrieve additional options for the particular chart type.
-		@param options {object} The extra options.
-		@return {SVGGraph|object} This graph object or the chart options (if no parameters).
-		@deprecated Use <code>options()</code>. */
-	chartOptions: function(options) {
-		return(arguments.length === 0 ? this.options() : this.options(options));
-	},
-
-	/** Set or retrieve additional options for the particular chart type.
-		@param options {object} The extra options.
-		@return {SVGGraph|object} This graph object or the chart options (if no parameters). */
-	options: function(options) {
-		if (arguments.length === 0) {
-			return this._chartOptions;
-		}
-		this._chartOptions = $.extend({}, options);
-		this._drawGraph();
-		return this;
-	},
-
-	/** Set or retrieve the background of the graph chart.
-		@param fill {string} How to fill the chart background.
-		@param [stroke] {string} The colour of the outline.
-		@param [settings] {object} Additional formatting for the chart background.
-		@return {SVGGraph|object} This graph object or the chart format (if no parameters).
-		@deprecated Use <code>format()</code>. */
-	chartFormat: function(fill, stroke, settings) {
-		return (arguments.length === 0 ? this.format() : this.format(fill, stroke, settings));
-	},
-
-	/** Set or retrieve the background of the graph chart.
-		@param fill {string} How to fill the chart background.
-		@param [stroke] {string} The colour of the outline.
-		@param [settings] {object} Additional formatting for the chart background.
-		@return {SVGGraph|object} This graph object or the chart format (if no parameters). */
-	format: function(fill, stroke, settings) {
-		if (arguments.length === 0) {
-			return this._chartFormat;
-		}
-		if (typeof stroke === 'object') {
-			settings = stroke;
-			stroke = null;
-		}
-		this._chartFormat = $.extend({fill: fill}, (stroke ? {stroke: stroke} : {}), settings || {});
-		this._drawGraph();
-		return this;
-	},
-
-	/** Set or retrieve the main chart area.
-		@param left {number|number[]} > 1 is pixels, <= 1 is proportion of width or array for left, top, right, bottom.
-		@param [top] {number} > 1 is pixels, <= 1 is proportion of height.
-		@param [right] {number} > 1 is pixels, <= 1 is proportion of width.
-		@param [bottom] {number} > 1 is pixels, <= 1 is proportion of height.
-		@return {SVGGraph|number[]} This graph object or the chart area: left, top, right, bottom (if no parameters).
-		@deprecated Use <code>area()</code>. */
-	chartArea: function(left, top, right, bottom) {
-		return (arguments.length === 0 ? this.area() : this.area(left, top, right, bottom));
-	},
-
-	/** Set or retrieve the main chart area.
-		@param left {number|number[]} > 1 is pixels, <= 1 is proportion of width or array for left, top, right, bottom.
-		@param [top] {number} > 1 is pixels, <= 1 is proportion of height.
-		@param [right] {number} > 1 is pixels, <= 1 is proportion of width.
-		@param [bottom] {number} > 1 is pixels, <= 1 is proportion of height.
-		@return {SVGGraph|number[]} This graph object or the chart area: left, top, right, bottom (if no parameters). */
-	area: function(left, top, right, bottom) {
-		if (arguments.length === 0) {
-			return this._area;
-		}
-		this._area = ($.isArray(left) ? left : [left, top, right, bottom]);
-		this._drawGraph();
-		return this;
-	},
-
-	/** Set or retrieve the gridlines formatting for the graph chart.
-		@param xSettings {string|object} The colour of the gridlines along the x-axis,
-				or formatting for the gridlines along the x-axis, or <code>null</code> for none.
-		@param ySettings {string|object} The colour of the gridlines along the y-axis,
-				or formatting for the gridlines along the y-axis, or <code>null</code> for none.
-		@return {SVGGraph|object[]} This graph object or the gridlines formatting (if no parameters) */
-	gridlines: function(xSettings, ySettings) {
-		if (arguments.length === 0) {
-			return this._gridlines;
-		}
-		this._gridlines = [(typeof xSettings === 'string' ? {stroke: xSettings} : xSettings),
-			(typeof ySettings === 'string' ? {stroke: ySettings} : ySettings)];
-		if (this._gridlines[0] == null && this._gridlines[1] == null) {
-			this._gridlines = [];
-		}
-		this._drawGraph();
-		return this;
-	},
-
-	/** Set or retrieve the title of the graph and its formatting.
-		@param value {string} The title.
-		@param [offset] {number} The vertical positioning of the title > 1 is pixels, <= 1 is proportion of width.
-		@param [colour] {string} The colour of the title.
-		@param [settings] {object} Formatting for the title.
-		@return {SVGGraph|object} This graph object or value, offset, and settings for the title (if no parameters). */
-	title: function(value, offset, colour, settings) {
-		if (arguments.length === 0) {
-			return this._title;
-		}
-		if (typeof offset !== 'number') {
-			settings = colour;
-			colour = offset;
-			offset = null;
-		}
-		if (typeof colour !== 'string') {
-			settings = colour;
-			colour = null;
-		}
-		this._title = {value: value, offset: offset || this._title.offset,
-			settings: $.extend({textAnchor: 'middle'}, (colour ? {fill: colour} : {}), settings || {})};
-		this._drawGraph();
-		return this;
-	},
-
-	/** Add a series of values to be plotted on the graph.
-		@param [name] {string} The name of this series.
-		@param values {number[]} The values to be plotted.
-		@param fill {string} How the plotted values are filled.
-		@param [stroke] {string} The colour of the plotted lines.
-		@param [strokeWidth] {number} The width of the plotted lines.
-		@param [settings] {object} Additional settings for the plotted values.
-		@return {SVGGraph} This graph object. */
-	addSeries: function(name, values, fill, stroke, strokeWidth, settings) {
-		this._series.push(new SVGGraphSeries(this, name, values, fill, stroke, strokeWidth, settings));
-		this._drawGraph();
-		return this;
-	},
-
-	/** Retrieve the series wrappers.
-		@param [i] {number} The series index.
-		@return {SVGGraphSeries|SVGGraphSeries[]} The specified series or the list of series. */
-	series: function(i) {
-		return (arguments.length > 0 ? this._series[i] : null) || this._series;
-	},
-
-	/** Suppress drawing of the graph until redraw() is called.
-		@return {SVGGraph} This graph object. */
-	noDraw: function() {
-		this._drawNow = false;
-		return this;
-	},
-
-	/** Redraw the entire graph with the current settings and values.
-		@return {SVGGraph} This graph object. */
-	redraw: function() {
-		this._drawNow = true;
-		this._drawGraph();
-		return this;
-	},
-
-	/** Set the callback function for status updates.
-		@param onstatus {function} The callback function.
-		@return {SVGGraph} This graph object. */
-	status: function(onstatus) {
-		this._onstatus = onstatus;
-		return this;
-	},
-
-	/** Actually draw the graph (if allowed) based on the graph type set.
-		@private */
-	_drawGraph: function() {
-		if (!this._drawNow) {
-			return;
-		}
-		while (this._chartCont.firstChild) {
-			this._chartCont.removeChild(this._chartCont.firstChild);
-		}
-		if (!this._chartCont.parent) {
-			this._wrapper._svg.appendChild(this._chartCont);
-		}
-		// Set sizes if not already there
-		if (!this._chartCont.width) {
-			this._chartCont.setAttribute('width',
-				parseInt(this._chartCont.getAttribute('width'), 10) || this._wrapper.width());
-		}
-		else if (this._chartCont.width.baseVal) {
-			this._chartCont.width.baseVal.value = this._chartCont.width.baseVal.value || this._wrapper.width();
-		}
-		else {
-			this._chartCont.width = this._chartCont.width || this._wrapper.width();
-		}
-		if (!this._chartCont.height) {
-			this._chartCont.setAttribute('height',
-				parseInt(this._chartCont.getAttribute('height'), 10) || this._wrapper.height());
-		}
-		else if (this._chartCont.height.baseVal) {
-			this._chartCont.height.baseVal.value = this._chartCont.height.baseVal.value || this._wrapper.height();
-		}
-		else {
-			this._chartCont.height = this._chartCont.height || this._wrapper.height();
-		}
-		this._chartType.drawGraph(this);
-	},
-
-	/** Decode an attribute value.
-		@private
-		@param node {SVGElement} The node to examine.
-		@param name {string} The attribute name.
-		@return {string} The actual value. */
-	_getValue: function(node, name) {
-		return (!node[name] ? parseInt(node.getAttribute(name), 10) :
-			(node[name].baseVal ? node[name].baseVal.value : node[name]));
-	},
-
-	/** Draw the graph title - centred.
-		@private */
-	_drawTitle: function() {
-		this._wrapper.text(this._chartCont, this._getValue(this._chartCont, 'width') / 2,
-			this._title.offset, this._title.value, this._title.settings);
-	},
-
-	/** Calculate the actual dimensions of the chart area.
-		@private
-		@param [area] {number[]} The area values to evaluate, defaulting to the current ones.
-		@return {number[]} An array of dimension values: left, top, width, height. */
-	_getDims: function(area) {
-		area = area || this._area;
-		var availWidth = this._getValue(this._chartCont, 'width');
-		var availHeight = this._getValue(this._chartCont, 'height');
-		var left = (area[this.L] > 1 ? area[this.L] : availWidth * area[this.L]);
-		var top = (area[this.T] > 1 ? area[this.T] : availHeight * area[this.T]);
-		var width = (area[this.R] > 1 ? area[this.R] : availWidth * area[this.R]) - left;
-		var height = (area[this.B] > 1 ? area[this.B] : availHeight * area[this.B]) - top;
-		return [left, top, width, height];
-	},
-
-	/** Draw the chart background, including gridlines.
-		@private
-		@param [noXGrid=false] {boolean} <code>true</code> to suppress the x-gridlines, <code>false</code> to draw them.
-		@param [noYGrid=false] {boolean} <code>true</code> to suppress the y-gridlines, <code>false</code> to draw them.
-		@return {SVGEelement} The background group element */
-	_drawChartBackground: function(noXGrid, noYGrid) {
-		var bg = this._wrapper.group(this._chartCont, {class_: 'background'});
-		var dims = this._getDims();
-		this._wrapper.rect(bg, dims[this.X], dims[this.Y], dims[this.W], dims[this.H], this._chartFormat);
-		if (this._gridlines[0] && this.yAxis._ticks.major && !noYGrid) {
-			this._drawGridlines(bg, this.yAxis, true, dims, this._gridlines[0]);
-		}
-		if (this._gridlines[1] && this.xAxis._ticks.major && !noXGrid) {
-			this._drawGridlines(bg, this.xAxis, false, dims, this._gridlines[1]);
-		}
-		return bg;
-	},
-
-	/** Draw one set of gridlines.
-		@private
-		@param bg {SVGElement} The background group element.
-		@param axis {SVGGraphAxis} The axis definition.
-		@param horiz {boolean} <code>true</code> if horizontal, <code>false</code> if vertical.
-		@param dims {number[]} The left, top, width, height of the chart area.
-		@param format {object} Additional settings for the gridlines. */
-	_drawGridlines: function(bg, axis, horiz, dims, format) {
-		var g = this._wrapper.group(bg, format);
-		var scale = (horiz ? dims[this.H] : dims[this.W]) / (axis._scale.max - axis._scale.min);
-		var major = Math.floor(axis._scale.min / axis._ticks.major) * axis._ticks.major;
-		major = (major < axis._scale.min ? major + axis._ticks.major : major);
-		while (major <= axis._scale.max) {
-			var v = (horiz ? axis._scale.max - major : major - axis._scale.min) * scale +
-				(horiz ? dims[this.Y] : dims[this.X]);
-			this._wrapper.line(g, (horiz ? dims[this.X] : v), (horiz ? v : dims[this.Y]),
-				(horiz ? dims[this.X] + dims[this.W] : v), (horiz ? v : dims[this.Y] + dims[this.H]));
-			major += axis._ticks.major;
-		}
-	},
-
-	/** Draw the axes in their standard configuration.
-		@private
-		@param [noX=false] {boolean} <code>true</code> to suppress the x-axes, <code>false</code> to draw it. */
-	_drawAxes: function(noX) {
-		var dims = this._getDims();
-		if (this.xAxis && !noX) {
-			if (this.xAxis._title) {
-				this._wrapper.text(this._chartCont, dims[this.X] + dims[this.W] / 2,
-					dims[this.Y] + dims[this.H] + this.xAxis._titleOffset, this.xAxis._title, this.xAxis._titleFormat);
-			}
-			this._drawAxis(this.xAxis, 'xAxis', dims[this.X], dims[this.Y] + dims[this.H],
-				dims[this.X] + dims[this.W], dims[this.Y] + dims[this.H]);
-		}
-		if (this.yAxis) {
-			if (this.yAxis._title) {
-				this._wrapper.text(this._chartCont, 0, 0, this.yAxis._title, $.extend({textAnchor: 'middle',
-					transform: 'translate(' + (dims[this.X] - this.yAxis._titleOffset) + ',' +
-					(dims[this.Y] + dims[this.H] / 2) + ') rotate(-90)'}, this.yAxis._titleFormat || {}));
-			}
-			this._drawAxis(this.yAxis, 'yAxis', dims[this.X], dims[this.Y], dims[this.X], dims[this.Y] + dims[this.H]);
-		}
-		if (this.x2Axis && !noX) {
-			if (this.x2Axis._title) {
-				this._wrapper.text(this._chartCont, dims[this.X] + dims[this.W] / 2,
-					dims[this.X] - this.x2Axis._titleOffset, this.x2Axis._title, this.x2Axis._titleFormat);
-			}
-			this._drawAxis(this.x2Axis, 'x2Axis', dims[this.X], dims[this.Y], dims[this.X] + dims[this.W], dims[this.Y]);
-		}
-		if (this.y2Axis) {
-			if (this.y2Axis._title) {
-				this._wrapper.text(this._chartCont, 0, 0, this.y2Axis._title, $.extend({textAnchor: 'middle',
-					transform: 'translate(' + (dims[this.X] + dims[this.W] + this.y2Axis._titleOffset) + ',' +
-					(dims[this.Y] + dims[this.H] / 2) + ') rotate(-90)'}, this.y2Axis._titleFormat || {}));
-			}
-			this._drawAxis(this.y2Axis, 'y2Axis', dims[this.X] + dims[this.W], dims[this.Y],
-				dims[this.X] + dims[this.W], dims[this.Y] + dims[this.H]);
-		}
-	},
-
-	/** Draw an axis and its tick marks.
-		@private
-		@param axis {SVGGraphAxis} The axis definition.
-		@param id {string} The identifier for the axis group element.
-		@param x1 {number} Starting x-coodinate for the axis.
-		@param y1 {number} Starting y-coodinate for the axis.
-		@param x2 {number} Ending x-coodinate for the axis.
-		@param y2 {number} Ending y-coodinate for the axis. */
-	_drawAxis: function(axis, id, x1, y1, x2, y2) {
-		var horiz = (y1 === y2);
-		var gl = this._wrapper.group(this._chartCont, $.extend({class_: id}, axis._lineFormat));
-		var gt = this._wrapper.group(this._chartCont, $.extend({class_: id + 'Labels',
-			textAnchor: (horiz ? 'middle' : 'end')}, axis._labelFormat));
-		this._wrapper.line(gl, x1, y1, x2, y2);
-		if (axis._ticks.major) {
-			var bottomRight = (x2 > (this._getValue(this._chartCont, 'width') / 2) &&
-				y2 > (this._getValue(this._chartCont, 'height') / 2));
-			var scale = (horiz ? x2 - x1 : y2 - y1) / (axis._scale.max - axis._scale.min);
-			var size = axis._ticks.size;
-			var major = Math.floor(axis._scale.min / axis._ticks.major) * axis._ticks.major;
-			major = (major < axis._scale.min ? major + axis._ticks.major : major);
-			var minor = (!axis._ticks.minor ? axis._scale.max + 1 :
-				Math.floor(axis._scale.min / axis._ticks.minor) * axis._ticks.minor);
-			minor = (minor < axis._scale.min ? minor + axis._ticks.minor : minor);
-			var offsets = this._getTickOffsets(axis, bottomRight);
-			var count = 0;
-			while (major <= axis._scale.max || minor <= axis._scale.max) {
-				var cur = Math.min(major, minor);
-				var len = (cur === major ? size : size / 2);
-				var v = (horiz ? x1 : y1) + (horiz ? cur - axis._scale.min : axis._scale.max - cur) * scale;
-				this._wrapper.line(gl, (horiz ? v : x1 + len * offsets[0]), (horiz ? y1 + len * offsets[0] : v),
-					(horiz ? v : x1 + len * offsets[1]), (horiz ? y1 + len * offsets[1] : v));
-				if (cur === major) {
-					this._wrapper.text(gt, (horiz ? v : x1 - size), (horiz ? y1 + 2 * size : v),
-						(axis._labels ? axis._labels[count++] : '' + cur));
-				}
-				major += (cur === major ? axis._ticks.major : 0);
-				minor += (cur === minor ? axis._ticks.minor : 0);
-			}
-		}
-	},
-
-	/** Calculate offsets based on axis and tick positions.
-		@private
-		@param axis {SVGGraphAxis} The axis definition.
-		@param bottomRight {boolean} <code>true</code> if this axis is appearing on the bottom or
-				right of the chart area, <code>false</code> if to the top or left.
-		@return {number[]} The array of offset multipliers (-1..+1). */
-	_getTickOffsets: function(axis, bottomRight) {
-		return [(axis._ticks.position === (bottomRight ? 'in' : 'out') || axis._ticks.position === 'both' ? -1 : 0),
-			(axis._ticks.position === (bottomRight ? 'out' : 'in') || axis._ticks.position === 'both' ? +1 : 0), ];
-	},
-
-	/** Retrieve the standard percentage axis.
-		@private
-		@return {SVGGraphAxis} Percentage axis. */
-	_getPercentageAxis: function() {
-		this._percentageAxis._title = $.svg.graphing.region.percentageText;
-		return this._percentageAxis;
-	},
-
-	/** Calculate the column totals across all the series.
-		@private 
-		@return {number[]} The column totals. */
-	_getTotals: function() {
-		var totals = [];
-		var numVal = (this._series.length ? this._series[0]._values.length : 0);
-		for (var i = 0; i < numVal; i++) {
-			totals[i] = 0;
-			for (var j = 0; j < this._series.length; j++) {
-				totals[i] += this._series[j]._values[i];
-			}
-		}
-		return totals;
-	},
-
-	/** Draw the chart legend.
-		@private */
-	_drawLegend: function() {
-		if (!this.legend._show) {
-			return;
-		}
-		var g = this._wrapper.group(this._chartCont, {class_: 'legend'});
-		var dims = this._getDims(this.legend._area);
-		this._wrapper.rect(g, dims[this.X], dims[this.Y], dims[this.W], dims[this.H], this.legend._bgSettings);
-		var horiz =  dims[this.W] > dims[this.H];
-		var numSer = this._series.length;
-		var offset = (horiz ? dims[this.W] : dims[this.H]) / numSer;
-		var xBase = dims[this.X] + 5;
-		var yBase = dims[this.Y] + ((horiz ? dims[this.H] : offset) + this.legend._sampleSize) / 2;
-		for (var i = 0; i < numSer; i++) {
-			var series = this._series[i];
-			this._wrapper.rect(g, xBase + (horiz ? i * offset : 0),
-				yBase + (horiz ? 0 : i * offset) - this.legend._sampleSize,
-				this.legend._sampleSize, this.legend._sampleSize,
-				{fill: series._fill, stroke: series._stroke, strokeWidth: 1});
-			this._wrapper.text(g, xBase + (horiz ? i * offset : 0) + this.legend._sampleSize + 5,
-				yBase + (horiz ? 0 : i * offset), series._name, this.legend._textSettings);
-		}
-	},
-
-	/** Show the current value status on hover.
-		@private 
-		@param elem {string|SVGElement} The selector or SVG element to show the status in.
-		@param label {string} The current label.
-		@param value {number} The current value. */
-	_showStatus: function(elem, label, value) {
-		var status = this._onstatus;
-		if (this._onstatus) {
-			$(elem).hover(function() { status.apply(this, [label, value]); },
-				function() { status.apply(this, ['', 0]); });
-		}
-	}
-});
-
-/** A graph series definition.
-	@module SVGGraphSeries */
-	
-/** Details about each graph series.
-	<p>Created through <code>graph.addSeries()</code>.</p>
-	@param graph {SVGGraph} The owning graph.
-	@param [name] {string} The name of this series.
-	@param values {number[]} The values to be plotted.
-	@param fill {string} How the plotted values are filled.
-	@param [stroke] {string} The colour of the plotted lines.
-	@param [strokeWidth] {number} The width of the plotted lines.
-	@param [settings] {object} Additional settings for the plotted values.
-	@return {SVGGraphSeries} The new series object. */
-function SVGGraphSeries(graph, name, values, fill, stroke, strokeWidth, settings) {
-	if (typeof name !== 'string') {
-		settings = strokeWidth;
-		strokeWidth = stroke;
-		stroke = fill;
-		fill = values;
-		values = name;
-		name = null;
-	}
-	if (typeof stroke !== 'string') {
-		settings = strokeWidth;
-		strokeWidth = stroke;
-		stroke = null;
-	}
-	if (typeof strokeWidth !== 'number') {
-		settings = strokeWidth;
-		strokeWidth = null;
-	}
-	this._graph = graph; // The owning graph
-	this._name = name || ''; // The name of this series
-	this._values = values || []; // The list of values for this series
-	this._axis = 1; // Which axis this series applies to: 1 = primary, 2 = secondary
-	this._fill = fill || 'green'; // How the series is plotted
-	this._stroke = stroke || 'black'; // The colour for the (out)line
-	this._strokeWidth = strokeWidth || 1; // The (out)line width
-	this._settings = settings || {}; // Additional formatting settings for the series
-}
-
-$.extend(SVGGraphSeries.prototype, {
-
-	/** Set or retrieve the name for this series.
-		@param name {string} The series' name.
-		@return {SVGGraphSeries|string} This series object or the series name (if no parameters). */
-	name: function(name) {
-		if (arguments.length === 0) {
-			return this._name;
-		}
-		this._name = name;
-		this._graph._drawGraph();
-		return this;
-	},
-
-	/** Set or retrieve the values for this series.
-		@param [name] {string} The series' name.
-		@param values {number[]} The values to be graphed.
-		@return {SVGGraphSeries|number[]} This series object or the series values (if no parameters). */
-	values: function(name, values) {
-		if (arguments.length === 0) {
-			return this._values;
-		}
-		if ($.isArray(name)) {
-			values = name;
-			name = null;
-		}
-		this._name = name || this._name;
-		this._values = values;
-		this._graph._drawGraph();
-		return this;
-	},
-
-	/** Set or retrieve the formatting for this series.
-		@param fill {string} How the values are filled when plotted.
-		@param [stroke] {string} The (out)line colour.
-		@param [strokeWidth] {number} The line's width.
-		@param [settings] {object} Additional formatting settings for the series.
-		@return {SVGGraphSeries|object} This series object or formatting settings (if no parameters). */
-	format: function(fill, stroke, strokeWidth, settings) {
-		if (arguments.length === 0) {
-			return $.extend({fill: this._fill, stroke: this._stroke, strokeWidth: this._strokeWidth}, this._settings);
-		}
-		if (typeof stroke !== 'string') {
-			settings = strokeWidth;
-			strokeWidth = stroke;
-			stroke = null;
-		}
-		if (typeof strokeWidth !== 'number') {
-			settings = strokeWidth;
-			strokeWidth = null;
-		}
-		this._fill = fill || this._fill;
-		this._stroke = stroke || this._stroke;
-		this._strokeWidth = strokeWidth || this._strokeWidth;
-		$.extend(this._settings, settings || {});
-		this._graph._drawGraph();
-		return this;
-	},
-
-	/** Return to the parent graph.
-		@return {SVGGraph} The parent graph. */
-	end: function() {
-		return this._graph;
-	}
-});
-
-/** A graph axis definition.
-	@module SVGGraphAxis */
-	
-/** Details about each graph axis.
-	@param graph {SVGGraph} The owning graph.
-	@param title {string} The title of the axis.
-	@param min [number} The minimum value displayed on this axis.
-	@param max {number} The maximum value displayed on this axis.
-	@param major {number} The distance between major ticks.
-	@param [minor] {number} The distance between minor ticks.
-	@return {SVGGraphAxis} The new axis object. */
-function SVGGraphAxis(graph, title, min, max, major, minor) {
-	this._graph = graph; // The owning graph
-	this._title = title || ''; // Title of this axis
-	this._titleFormat = {}; // Formatting settings for the title
-	this._titleOffset = 0; // The offset for positioning the title
-	this._labels = null; // List of labels for this axis - one per possible value across all series
-	this._labelFormat = {}; // Formatting settings for the labels
-	this._lineFormat = {stroke: 'black', strokeWidth: 1}; // Formatting settings for the axis lines
-	this._ticks = {major: major || 10, minor: minor || 0, size: 10, position: 'out'}; // Tick mark options
-	this._scale = {min: min || 0, max: max || 100}; // Axis scale settings
-	this._crossAt = 0; // Where this axis crosses the other one
-}
-
-$.extend(SVGGraphAxis.prototype, {
-
-	/** Set or retrieve the scale for this axis.
-		@param min {number} The minimum value shown.
-		@param max {number} The maximum value shown.
-		@return {SVGGraphAxis|object} This axis object or min and max values (if no parameters). */
-	scale: function(min, max) {
-		if (arguments.length === 0) {
-			return this._scale;
-		}
-		this._scale.min = min;
-		this._scale.max = max;
-		this._graph._drawGraph();
-		return this;
-	},
-
-	/** Set or retrieve the ticks for this axis.
-		@param major {number} The distance between major ticks.
-		@param minor {number} The distance between minor ticks.
-		@param [size] {number} The length of the major ticks (minor are half).
-		@param [position] {string} The location of the ticks: 'in', 'out', 'both'.
-		@return {SVGGraphAxis|object} This axis object or major, minor, size, and position values (if no parameters). */
-	ticks: function(major, minor, size, position) {
-		if (arguments.length === 0) {
-			return this._ticks;
-		}
-		if (typeof size === 'string') {
-			position = size;
-			size = null;
-		}
-		this._ticks.major = major;
-		this._ticks.minor = minor;
-		this._ticks.size = size || this._ticks.size;
-		this._ticks.position = position || this._ticks.position;
-		this._graph._drawGraph();
-		return this;
-	},
-
-	/** Set or retrieve the title for this axis.
-		@param title {string} The title text
-		@param [offset] {number} The distance to offset the title position.
-		@param [colour] {string} How to colour the title. 
-		@param [format] {object} Formatting settings for the title.
-		@return {SVGGraphAxis|object} This axis object or title, offset, and format values (if no parameters). */
-	title: function(title, offset, colour, format) {
-		if (arguments.length === 0) {
-			return {title: this._title, offset: this._titleOffset, format: this._titleFormat};
-		}
-		if (typeof offset !== 'number') {
-			format = colour;
-			colour = offset;
-			offset = null;
-		}
-		if (typeof colour !== 'string') {
-			format = colour;
-			colour = null;
-		}
-		this._title = title;
-		this._titleOffset = (offset != null ? offset : this._titleOffset);
-		if (colour || format) {
-			this._titleFormat = $.extend(format || {}, (colour ? {fill: colour} : {}));
-		}
-		this._graph._drawGraph();
-		return this;
-	},
-
-	/** Set or retrieve the labels for this axis.
-		@param labels {string[]} The text for each entry.
-		@param [colour] {string} How to colour the labels. 
-		@param [format] {object} Formatting settings for the labels.
-		@return {SVGGraphAxis|object} This axis object or labels and format values (if no parameters). */
-	labels: function(labels, colour, format) {
-		if (arguments.length === 0) {
-			return {labels: this._labels, format: this._labelFormat};
-		}
-		if (typeof colour !== 'string') {
-			format = colour;
-			colour = null;
-		}
-		this._labels = labels;
-		if (colour || format) {
-			this._labelFormat = $.extend(format || {}, (colour ? {fill: colour} : {}));
-		}
-		this._graph._drawGraph();
-		return this;
-	},
-
-	/** Set or retrieve the line formatting for this axis.
-		@param colour {string} The line's colour
-		@param [width] {number} The line's width.
-		@param [settings] {object} Additional formatting settings for the line.
-		@return {SVGGraphAxis|object} This axis object or line formatting values (if no parameters). */
-	line: function(colour, width, settings) {
-		if (arguments.length === 0) {
-			return this._lineFormat;
-		}
-		if (typeof width === 'object') {
-			settings = width;
-			width = null;
-		}
-		$.extend(this._lineFormat, {stroke: colour}, (width ? {strokeWidth: width} : {}), settings || {});
-		this._graph._drawGraph();
-		return this;
-	},
-
-	/** Return to the parent graph.
-		@return {SVGGraph} The parent graph. */
-	end: function() {
-		return this._graph;
-	}
-});
-
-/** A graph legend definition.
-	@module SVGGraphLegend */
-	
-/** Details about each graph legend.
-	@param graph {SVGGraph} The owning graph.
-	@param [bgSettings] {object} Additional formatting settings for the legend background.
-	@param [textSettings] {object} Additional formatting settings for the legend text.
-	@return {SVGGraphLegend} The new legend object. */
-function SVGGraphLegend(graph, bgSettings, textSettings) {
-	this._graph = graph; // The owning graph
-	this._show = true; // Show the legend?
-	this._area = [0.9, 0.1, 1.0, 0.9]; // The legend area: left, top, right, bottom, > 1 in pixels, <= 1 as proportion
-	this._sampleSize = 15; // Size of sample box
-	this._bgSettings = bgSettings || {stroke: 'gray'}; // Additional formatting settings for the legend background
-	this._textSettings = textSettings || {}; // Additional formatting settings for the text
-}
-
-$.extend(SVGGraphLegend.prototype, {
-
-	/** Set or retrieve whether the legend should be shown.
-		@param show {boolean} <code>true</code> to display it, <code>false</code> to hide it.
-		@return {SVGGraphLegend|boolean} This legend object or show the legend? (if no parameters) */
-	show: function(show) {
-		if (arguments.length === 0) {
-			return this._show;
-		}
-		this._show = show;
-		this._graph._drawGraph();
-		return this;
-	},
-
-	/** Set or retrieve the legend area.
-		@param left {number|number[]} > 1 is pixels, <= 1 is proportion of width or array for left, top, right, bottom.
-		@param [top] {number) > 1 is pixels, <= 1 is proportion of height.
-		@param [right] {number) > 1 is pixels, <= 1 is proportion of width.
-		@param [bottom] {number) > 1 is pixels, <= 1 is proportion of height.
-		@return {SVGGraphLegend|number[]} This legend object or the legend area:
-				left, top, right, bottom (if no parameters). */
-	area: function(left, top, right, bottom) {
-		if (arguments.length === 0) {
-			return this._area;
-		}
-		this._area = ($.isArray(left) ? left : [left, top, right, bottom]);
-		this._graph._drawGraph();
-		return this;
-	},
-
-	/** Set or retrieve additional settings for the legend area.
-		@param [sampleSize] {number} The size of the sample box to display.
-		@param bgSettings {object} Additional formatting settings for the legend background.
-		@param [textSettings] {object} Additional formatting settings for the legend text.
-		@return {SVGGraphLegend|object} This legend object or
-				bgSettings and textSettings for the legend (if no parameters). */
-	settings: function(sampleSize, bgSettings, textSettings) {
-		if (arguments.length === 0) {
-			return {sampleSize: this._sampleSize, bgSettings: this._bgSettings, textSettings: this._textSettings};
-		}
-		if (typeof sampleSize !== 'number') {
-			textSettings = bgSettings;
-			bgSettings = sampleSize;
-			sampleSize = null;
-		}
-		this._sampleSize = sampleSize || this._sampleSize;
-		this._bgSettings = bgSettings;
-		this._textSettings = textSettings || this._textSettings;
-		this._graph._drawGraph();
-		return this;
-	},
-
-	/** Return to the parent graph.
-		@return {SVGGraph} The parent graph. */
-	end: function() {
-		return this._graph;
-	}
-});
-
-//==============================================================================
-
-/** Round a number to a given number of decimal points.
-	@private
-	@param num {number} The original value.
-	@param dec {number} The number of decimal points to retain.
-	@return {number} The rounded number. */
-function roundNumber(num, dec) {
-	return Math.round(num * Math.pow(10, dec)) / Math.pow(10, dec);
-}
-
-var barOptions = ['barWidth (number) - the width of each bar', 'barGap (number) - the gap between sets of bars'];
-
-//------------------------------------------------------------------------------
-
-/** Draw a standard grouped column bar chart.
-	@module SVGColumnChart */
-function SVGColumnChart() {
-}
-
-$.extend(SVGColumnChart.prototype, {
-
-	/** Retrieve the display title for this chart type.
-		@return {string} Its title. */
-	title: function() {
-		return 'Basic column chart';
-	},
-
-	/** Retrieve a description of this chart type.
-		@return {string} Its description. */
-	description: function() {
-		return 'Compare sets of values as vertical bars with grouped categories.';
-	},
-
-	/** Retrieve a list of the options that may be set for this chart type.
-		@return {string[]} Its options list. */
-	options: function() {
-		return barOptions;
-	},
-
-	/** Actually draw the graph in this type's style.
-		@param graph {SVGGraph} The graph object. */
-	drawGraph: function(graph) {
-		graph._drawChartBackground(true);
-		var barWidth = graph._chartOptions.barWidth || 10;
-		var barGap = graph._chartOptions.barGap || 10;
-		var numSer = graph._series.length;
-		var numVal = (numSer ? (graph._series[0])._values.length : 0);
-		var dims = graph._getDims();
-		var xScale = dims[graph.W] / ((numSer * barWidth + barGap) * numVal + barGap);
-		var yScale = dims[graph.H] / (graph.yAxis._scale.max - graph.yAxis._scale.min);
-		this._chart = graph._wrapper.group(graph._chartCont, {class_: 'chart'});
-		for (var i = 0; i < numSer; i++) {
-			this._drawSeries(graph, i, numSer, barWidth, barGap, dims, xScale, yScale);
-		}
-		graph._drawTitle();
-		graph._drawAxes(true);
-		this._drawXAxis(graph, numSer, numVal, barWidth, barGap, dims, xScale);
-		graph._drawLegend();
-	},
-
-	/** Plot an individual series.
-		@private
-		@param graph {SVGGraph} The graph object.
-		@param cur {number} The current series index.
-		@param numSer {number} The number of points in this series.
-		@param barWidth {number} The width of each bar.
-		@param barGap {number} The space between bars.
-		@param dims {number[]} The dimensions of the drawing area.
-		@param xScale {number} The scaling factor in the horizontal direction.
-		@param yScale {number} The scaling factor in the vertical direction. */
-	_drawSeries: function(graph, cur, numSer, barWidth, barGap, dims, xScale, yScale) {
-		var series = graph._series[cur];
-		var g = graph._wrapper.group(this._chart,
-			$.extend({class_: 'series' + cur, fill: series._fill, stroke: series._stroke,
-			strokeWidth: series._strokeWidth}, series._settings || {}));
-		for (var i = 0; i < series._values.length; i++) {
-			var r = graph._wrapper.rect(g,
-				dims[graph.X] + xScale * (barGap + i * (numSer * barWidth + barGap) + (cur * barWidth)),
-				dims[graph.Y] + yScale * (graph.yAxis._scale.max - series._values[i]),
-				xScale * barWidth, yScale * series._values[i]);
-			graph._showStatus(r, series._name, series._values[i]);
-		}
-	},
-
-	/** Draw the x-axis and its ticks.
-		@private
-		@param graph {SVGGraph} The graph object.
-		@param numSer {number} The number of points in this series.
-		@param numVal {number} The current value index.
-		@param barWidth {number} The width of each bar.
-		@param barGap {number} The space between bars.
-		@param dims {number[]} The dimensions of the drawing area.
-		@param xScale {number} The scaling factor in the horizontal direction. */
-	_drawXAxis: function(graph, numSer, numVal, barWidth, barGap, dims, xScale) {
-		var axis = graph.xAxis;
-		if (axis._title) {
-			graph._wrapper.text(graph._chartCont, dims[graph.X] + dims[graph.W] / 2,
-				dims[graph.Y] + dims[graph.H] + axis._titleOffset,
-				axis._title, $.extend({textAnchor: 'middle'}, axis._titleFormat || {}));
-		}
-		var gl = graph._wrapper.group(graph._chartCont, $.extend({class_: 'xAxis'}, axis._lineFormat));
-		var gt = graph._wrapper.group(graph._chartCont, $.extend({class_: 'xAxisLabels',
-			textAnchor: 'middle'}, axis._labelFormat));
-		graph._wrapper.line(gl, dims[graph.X], dims[graph.Y] + dims[graph.H],
-			dims[graph.X] + dims[graph.W], dims[graph.Y] + dims[graph.H]);
-		if (axis._ticks.major) {
-			var offsets = graph._getTickOffsets(axis, true);
-			for (var i = 1; i < numVal; i++) {
-				var x = dims[graph.X] + xScale * (barGap / 2 + i * (numSer * barWidth + barGap));
-				graph._wrapper.line(gl, x, dims[graph.Y] + dims[graph.H] + offsets[0] * axis._ticks.size,
-					x, dims[graph.Y] + dims[graph.H] + offsets[1] * axis._ticks.size);
-			}
-			for (var i = 0; i < numVal; i++) {
-				var x = dims[graph.X] + xScale * (barGap / 2 + (i + 0.5) * (numSer * barWidth + barGap));
-				graph._wrapper.text(gt, x, dims[graph.Y] + dims[graph.H] + 2 * axis._ticks.size,
-					(axis._labels ? axis._labels[i] : '' + i));
-			}
-		}
-	}
-});
-
-//------------------------------------------------------------------------------
-
-/** Draw a stacked column bar chart.
-	@module SVGStackedColumnChart */
-function SVGStackedColumnChart() {
-}
-
-$.extend(SVGStackedColumnChart.prototype, {
-
-	/** Retrieve the display title for this chart type.
-		@return {string} Its title. */
-	title: function() {
-		return 'Stacked column chart';
-	},
-
-	/** Retrieve a description of this chart type.
-		@return {string} Its description. */
-	description: function() {
-		return 'Compare sets of values as vertical bars showing ' +
-			'relative contributions to the whole for each category.';
-	},
-
-	/** Retrieve a list of the options that may be set for this chart type.
-		@return {string[]} Its options list. */
-	options: function() {
-		return barOptions;
-	},
-
-	/** Actually draw the graph in this type's style.
-		@param graph {SVGGraph} The graph object. */
-	drawGraph: function(graph) {
-		var bg = graph._drawChartBackground(true, true);
-		var dims = graph._getDims();
-		if (graph._gridlines[0] && graph.xAxis._ticks.major) {
-			graph._drawGridlines(bg, graph._getPercentageAxis(), true, dims, graph._gridlines[0]);
-		}
-		var barWidth = graph._chartOptions.barWidth || 10;
-		var barGap = graph._chartOptions.barGap || 10;
-		var numSer = graph._series.length;
-		var numVal = (numSer ? (graph._series[0])._values.length : 0);
-		var xScale = dims[graph.W] / ((barWidth + barGap) * numVal + barGap);
-		var yScale = dims[graph.H];
-		this._chart = graph._wrapper.group(graph._chartCont, {class_: 'chart'});
-		this._drawColumns(graph, numSer, numVal, barWidth, barGap, dims, xScale, yScale);
-		graph._drawTitle();
-		graph._wrapper.text(graph._chartCont, 0, 0, $.svg.graphing.region.percentageText,
-			$.extend({textAnchor: 'middle', transform: 'translate(' +
-			(dims[graph.X] - graph.yAxis._titleOffset) + ',' +
-			(dims[graph.Y] + dims[graph.H] / 2) + ') rotate(-90)'}, graph.yAxis._titleFormat || {}));
-		var pAxis = $.extend({}, graph._getPercentageAxis());
-		$.extend(pAxis._labelFormat, graph.yAxis._labelFormat || {});
-		graph._drawAxis(pAxis, 'yAxis', dims[graph.X], dims[graph.Y], dims[graph.X], dims[graph.Y] + dims[graph.H]);
-		this._drawXAxis(graph, numVal, barWidth, barGap, dims, xScale);
-		graph._drawLegend();
-	},
-
-	/** Plot all of the columns.
-		@private
-		@param graph {SVGGraph} The graph object.
-		@param numSer {number} The number of points in this series.
-		@param numVal {number} The current value index.
-		@param barWidth {number} The width of each bar.
-		@param barGap {number} The space between bars.
-		@param dims {number[]} The dimensions of the drawing area.
-		@param xScale {number} The scaling factor in the horizontal direction.
-		@param yScale {number} The scaling factor in the vertical direction. */
-	_drawColumns: function(graph, numSer, numVal, barWidth, barGap, dims, xScale, yScale) {
-		var totals = graph._getTotals();
-		var accum = [];
-		for (var i = 0; i < numVal; i++) {
-			accum[i] = 0;
-		}
-		for (var s = 0; s < numSer; s++) {
-			var series = graph._series[s];
-			var g = graph._wrapper.group(this._chart, $.extend({class_: 'series' + s, fill: series._fill,
-				stroke: series._stroke, strokeWidth: series._strokeWidth}, series._settings || {}));
-			for (var i = 0; i < series._values.length; i++) {
-				accum[i] += series._values[i];
-				var r = graph._wrapper.rect(g, dims[graph.X] + xScale * (barGap + i * (barWidth + barGap)),
-					dims[graph.Y] + yScale * (totals[i] - accum[i]) / totals[i],
-					xScale * barWidth, yScale * series._values[i] / totals[i]);
-				graph._showStatus(r, series._name, roundNumber(series._values[i] / totals[i] * 100, 2));
-			}
-		}
-	},
-
-	/** Draw the x-axis and its ticks.
-		@private
-		@param graph {SVGGraph} The graph object.
-		@param numVal {number} The current value index.
-		@param barWidth {number} The width of each bar.
-		@param barGap {number} The space between bars.
-		@param dims {number[]} The dimensions of the drawing area.
-		@param xScale {number} The scaling factor in the horizontal direction. */
-	_drawXAxis: function(graph, numVal, barWidth, barGap, dims, xScale) {
-		var axis = graph.xAxis;
-		if (axis._title) {
-			graph._wrapper.text(graph._chartCont, dims[graph.X] + dims[graph.W] / 2,
-				dims[graph.Y] + dims[graph.H] + axis._titleOffset,
-				axis._title, $.extend({textAnchor: 'middle'}, axis._titleFormat || {}));
-		}
-		var gl = graph._wrapper.group(graph._chartCont, $.extend({class_: 'xAxis'}, axis._lineFormat));
-		var gt = graph._wrapper.group(graph._chartCont, $.extend({class_: 'xAxisLabels',
-			textAnchor: 'middle'}, axis._labelFormat));
-		graph._wrapper.line(gl, dims[graph.X], dims[graph.Y] + dims[graph.H],
-		dims[graph.X] + dims[graph.W], dims[graph.Y] + dims[graph.H]);
-		if (axis._ticks.major) {
-			var offsets = graph._getTickOffsets(axis, true);
-			for (var i = 1; i < numVal; i++) {
-				var x = dims[graph.X] + xScale * (barGap / 2 + i * (barWidth + barGap));
-				graph._wrapper.line(gl, x, dims[graph.Y] + dims[graph.H] + offsets[0] * axis._ticks.size,
-					x, dims[graph.Y] + dims[graph.H] + offsets[1] * axis._ticks.size);
-			}
-			for (var i = 0; i < numVal; i++) {
-				var x = dims[graph.X] + xScale * (barGap / 2 + (i + 0.5) * (barWidth + barGap));
-				graph._wrapper.text(gt, x, dims[graph.Y] + dims[graph.H] + 2 * axis._ticks.size,
-					(axis._labels ? axis._labels[i] : '' + i));
-			}
-		}
-	}
-});
-
-//------------------------------------------------------------------------------
-
-/** Draw a standard grouped row bar chart.
-	@module SVGRowChart */
-function SVGRowChart() {
-}
-
-$.extend(SVGRowChart.prototype, {
-
-	/** Retrieve the display title for this chart type.
-		@return {string} Its title. */
-	title: function() {
-		return 'Basic row chart';
-	},
-
-	/** Retrieve a description of this chart type.
-		@return {string} Its description. */
-	description: function() {
-		return 'Compare sets of values as horizontal rows with grouped categories.';
-	},
-
-	/** Retrieve a list of the options that may be set for this chart type.
-		@return {string[]} Its options list. */
-	options: function() {
-		return barOptions;
-	},
-
-	/** Actually draw the graph in this type's style.
-		@param graph {SVGGraph} The graph object. */
-	drawGraph: function(graph) {
-		var bg = graph._drawChartBackground(true, true);
-		var dims = graph._getDims();
-		graph._drawGridlines(bg, graph.yAxis, false, dims, graph._gridlines[0]);
-		var barWidth = graph._chartOptions.barWidth || 10;
-		var barGap = graph._chartOptions.barGap || 10;
-		var numSer = graph._series.length;
-		var numVal = (numSer ? (graph._series[0])._values.length : 0);
-		var xScale = dims[graph.W] / (graph.yAxis._scale.max - graph.yAxis._scale.min);
-		var yScale = dims[graph.H] / ((numSer * barWidth + barGap) * numVal + barGap);
-		this._chart = graph._wrapper.group(graph._chartCont, {class_: 'chart'});
-		for (var i = 0; i < numSer; i++) {
-			this._drawSeries(graph, i, numSer, barWidth, barGap, dims, xScale, yScale);
-		}
-		graph._drawTitle();
-		this._drawAxes(graph, numSer, numVal, barWidth, barGap, dims, yScale);
-		graph._drawLegend();
-	},
-
-	/** Plot an individual series.
-		@private
-		@param graph {SVGGraph} The graph object.
-		@param cur {number} The current series index.
-		@param numSer {number} The number of points in this series.
-		@param barWidth {number} The width of each bar.
-		@param barGap {number} The space between bars.
-		@param dims {number[]} The dimensions of the drawing area.
-		@param xScale {number} The scaling factor in the horizontal direction.
-		@param yScale {number} The scaling factor in the vertical direction. */
-	_drawSeries: function(graph, cur, numSer, barWidth, barGap, dims, xScale, yScale) {
-		var series = graph._series[cur];
-		var g = graph._wrapper.group(this._chart, $.extend({class_: 'series' + cur, fill: series._fill,
-			stroke: series._stroke, strokeWidth: series._strokeWidth}, series._settings || {}));
-		for (var i = 0; i < series._values.length; i++) {
-			var r = graph._wrapper.rect(g, dims[graph.X] + xScale * (0 - graph.yAxis._scale.min),
-				dims[graph.Y] + yScale * (barGap + i * (numSer * barWidth + barGap) + (cur * barWidth)),
+dReleases: Found candidate "0.0.0.135" (0x00000087).
+004237.505|   OKAY|           <unknown-plugin>| Riot::RADS::Patching::EnumerateInstalledReleases: Found OK-file
+004237.505|   OKAY|           <unknown-plugin>| Riot::RADS::Common::SolutionManifest::Load: ("D:/Games Library/League Of Legends/RADS/solutions/league_client_sln/releases/0.0.0.135/solutionmanifest")
+004237.505|   OKAY|           <unknown-plugin>| Riot::RADS::Common::SolutionManifest::Load: Succeeded
+004237.505|   OKAY|           <unknown-plugin>| Riot::RADS::Common::ConfigurationManifest::Load: ("D:/Games Library/League Of Legends/RADS/solutions/league_client_sln/releases/0.0.0.135//configurationmanifest")
+004237.505|   OKAY|           <unknown-plugin>| Riot::RADS::Patching::EnumerateInstalledReleases: Candidate is valid.
+004237.505|   OKAY|           <unknown-plugin>| Riot::RADS::Patching::EnumerateInstalledReleases: Found candidate "0.0.0.136" (0x00000088).
+004237.505|   OKAY|           <unknown-plugin>| Riot::RADS::Patching::EnumerateInstalledReleases: Found OK-file
+004237.505|   OKAY|           <unknown-plugin>| Riot::RADS::Common::SolutionManifest::Load: ("D:/Games Library/League Of Legends/RADS/solutions/league_client_sln/releases/0.0.0.136/solutionmanifest")
+004237.506|   OKAY|           <unknown-plugin>| Riot::RADS::Common::SolutionManifest::Load: Succeeded
+004237.506|   OKAY|           <unknown-plugin>| Riot::RADS::Common::ConfigurationManifest::Load: ("D:/Games Library/League Of Legends/RADS/solutions/league_client_sln/releases/0.0.0.136//configurationmanifest")
+004237.507|   OKAY|           <unknown-plugin>| Riot::RADS::Patching::EnumerateInstalledReleases: Candidate is valid.
+004237.508|   OKAY|           <unknown-plugin>| Riot::RADS::Patching::EnumerateInstalledReleases: Succeeded.
+004237.508|   OKAY|           <unknown-plugin>| Riot::RADS::Common::ConfigurationManifest::Load: ("D:/Games Library/League Of Legends/RADS/solutions/league_client_sln/releases/0.0.0.136/configurationmanifest")
+004237.508|   OKAY|           <unknown-plugin>| Riot::RADS::Common::HTTPConnection::HTTPConnection: (https://l3cdn.riotgames.com)
+004237.508|   OKAY|           <unknown-plugin>| Riot::RADS::Common::HTTPConnection::Connect: (https://l3cdn.riotgames.com)
+004237.508|   OKAY|           <unknown-plugin>| Riot::RADS::Patching::RemoteFileServerHTTP::EnumerateAvailableReleases: ("league_client_sln", "EUW")
+004237.508|   OKAY|           <unknown-plugin>| Riot::RADS::Patching::RetrieveReleaseListing: ("league_client_sln", "EUW")
+004237.509|   OKAY|           <unknown-plugin>| Riot::RADS::Common::HTTPConnection::GetFile: ("/releases/live/solutions/league_client_sln/releases/releaselisting_EUW", "D:/Games Library/League Of Legends/RADS/temp/release_listing/TMP50.tmp", 0x1090F5B4)
+004237.702| ALWAYS|           <unknown-plugin>| Riot::RADS::Patching::RemoteFileServerHTTP::EnumerateAvailableReleases: Using cached releaselisting as downloaded releaselisting was not modified.
+004237.702|   OKAY|           <unknown-plugin>| Riot::RADS::Common::HTTPConnection::Disconnect: ()
+004237.883|   OKAY|           <unknown-plugin>| Riot::RADS::Patching::EnumerateInstalledReleases: (lol_game_client_sln)
+004237.884|   OKAY|           <unknown-plugin>| Riot::RADS::Patching::EnumerateInstalledReleases: Found candidate "0.0.1.225" (0x000001e1).
+004237.884|   OKAY|           <unknown-plugin>| Riot::RADS::Patching::EnumerateInstalledReleases: Found OK-file
+004237.884|   OKAY|           <unknown-plugin>| Riot::RADS::Common::SolutionManifest::Load: ("D:/Games Library/League Of Legends/RADS/solutions/lol_game_client_sln/releases/0.0.1.225/solutionmanifest")
+004237.884|   OKAY|           <unknown-plugin>| Riot::RADS::Common::SolutionManifest::Load: Succeeded
+004237.884|   OKAY|           <unknown-plugin>| Riot::RADS::Common::ConfigurationManifest::Load: ("D:/Games Library/League Of Legends/RADS/solutions/lol_game_client_sln/releases/0.0.1.225//configurationmanifest")
+004237.885|   OKAY|           <unknown-plugin>| Riot::RADS::Patching::EnumerateInstalledReleases: Candidate is valid.
+004237.885|   OKAY|           <unknown-plugin>| Riot::RADS::Patching::EnumerateInstalledReleases: Found candidate "0.0.1.242" (0x000001f2).
+004237.885|   OKAY|           <unknown-plugin>| Riot::RADS::Patching::EnumerateInstalledReleases: Found OK-file
+004237.885|   OKAY|           <unknown-plugin>| Riot::RADS::Common::SolutionManifest::Load: ("D:/Games Library/League Of Legends/RADS/solutions/lol_game_client_sln/releases/0.0.1.242/solutionmanifest")
+004237.885|   OKAY|           <unknown-plugin>| Riot::RADS::Common::SolutionManifest::Load: Succeeded
+004237.885|   OKAY|           <unknown-plugin>| Riot::RADS::Common::ConfigurationManifest::Load: ("D:/Games Library/League Of Legends/RADS/solutions/lol_game_client_sln/releases/0.0.1.242//configurationmanifest")
+004237.885|   OKAY|           <unknown-plugin>| Riot::RADS::Patching::EnumerateInstalledReleases: Candidate is valid.
+004237.885|   OKAY|           <unknown-plugin>| Riot::RADS::Patching::EnumerateInstalledReleases: Succeeded.
+004237.885|   OKAY|           <unknown-plugin>| Riot::RADS::Common::ConfigurationManifest::Load: ("D:/Games Library/League Of Legends/RADS/solutions/lol_game_client_sln/releases/0.0.1.242/configurationmanifest")
+004237.885|   OKAY|           <unknown-plugin>| Riot::RADS::Common::HTTPConnection::HTTPConnection: (https://l3cdn.riotgames.com)
+004237.885|   OKAY|           <unknown-plugin>| Riot::RADS::Common::HTTPConnection::Connect: (https://l3cdn.riotgames.com)
+004237.885|   OKAY|           <unknown-plugin>| Riot::RADS::Patching::RemoteFileServerHTTP::EnumerateAvailableReleases: ("lol_game_client_sln", "EUW")
+004237.885|   OKAY|           <unknown-plugin>| Riot::RADS::Patching::RetrieveReleaseListing: ("lol_game_client_sln", "EUW")
+004237.886|   OKAY|           <unknown-plugin>| Riot::RADS::Common::HTTPConnection::GetFile: ("/releases/live/solutions/lol_game_client_sln/releases/releaselisting_EUW", "D:/Games Library/League Of Legends/RADS/temp/release_listing/TMP51.tmp", 0x1090F204)
+004238.089| ALWAYS|           <unknown-plugin>| Riot::RADS::Patching::RemoteFileServerHTTP::EnumerateAvailableReleases: Using cached releaselisting as downloaded releaselisting was not modified.
+004238.089|   OKAY|           <unknown-plugin>| Riot::RADS::Common::HTTPConnection::Disconnect: ()
+004246.093|   OKAY| Unloading UX process
+004246.093|   OKAY| Quitting.
+004246.116| ALWAYS|                  lol-login| The following locks have not been cleared: lol-lobby
+004246.116| ALWAYS|                  lol-login| Logout retry timer started.
+004246.116| ALWAYS|                  lol-lobby| lol-lobby: Preparing service proxy request: parties.service.proxy
+004246.126|   OKAY| Waiting for the UX to hide.
+004246.131|   OKAY| Waiting for the UX to quit.
+004246.147|   OKAY| Waiting for the UX process to stop.
+004246.149| ALWAYS| Ux state set to HideAll.
+004246.166| ALWAYS| Ux state set to Quit.
+004246.171| ALWAYS|                  lol-lobby| lol-lobby: Started service proxy request: parties.service.proxy (232d6044-888c-6a49-b79c-046bb2f29061)
+004246.192| ALWAYS| The following message is prepared to be sent to dradis:
+Event Name: riot__rclient__js_memory_stats_summary
+common.account_id: 203247786
+common.application_name: LeagueClient
+common.game_data_build_id: 10134597
+common.client_id: lol
+common.application_version: 8.19.247.3725
+common.code_build_id: 10112348
+common.locale: en_GB
+common.content_build_id: 10112760
+totalHeapSize: 157000000
+common.installation_id: uyBDJw==
+common.os_version_major: 10
+common.machine_id: v7/6fi+Fxk6lmMIFSGVvQA==
+common.os_edition: Professional, x64
+common.os_platform: Windows
+common.os_version_minor: 
+common.platform_id: EUW1
+common.region: EUW
+heapSizeLimit: 793000000
+usedHeapSize: 131000000
+004246.192| ALWAYS| Queued Dradis event to be sent.
+004246.208| ALWAYS|                  lol-lobby| lol-lobby: Fulfilled service proxy request: 232d6044-888c-6a49-b79c-046bb2f29061
+004246.208| ALWAYS|                  lol-lobby| Deleted parties registration for player ae6aa2b0-8519-5682-861f-858378b0dd9e
+004246.209| ALWAYS|                  lol-login| lol-login: Beginning logout.
+004246.215| ALWAYS|              lol-inventory| Inventory configuration: ( LoggedIn )
+004246.215| ALWAYS|              lol-inventory| Inventory configuration: COMPLETE (notifying)
+004246.216| ALWAYS|                   rso-auth| RSOAuthPlugin::HandleAuthorizationDelete()
+004246.243|  ERROR|                   Remoting| HTTP Response 405 to DELETE '/lol-settings/v2/account/LCUPreferences/lol-general'
+004246.247|  ERROR|                   Remoting| HTTP Response 405 to DELETE '/lol-settings/v2/account/LCUPreferences/lol-notifications'
+004246.249|  ERROR|                   Remoting| HTTP Response 405 to DELETE '/lol-settings/v2/account/LCUPreferences/lol-chat'
+004246.252|  ERROR|                   Remoting| HTTP Response 405 to DELETE '/lol-settings/v2/account/LCUPreferences/lol-block-list'
+004246.254|  ERROR|                   Remoting| HTTP Response 405 to DELETE '/lol-settings/v2/account/LCUPreferences/lol-premade-voice'
+004246.256|  ERROR|                   Remoting| HTTP Response 405 to DELETE '/lol-settings/v2/account/LCUPreferences/lol-content-targeting'
+004246.259|  ERROR|                   Remoting| HTTP Response 405 to DELETE '/lol-settings/v2/account/GamePreferences/input-settings'
+004246.261|  ERROR|                   Remoting| HTTP Response 405 to DELETE '/lol-settings/v2/account/GamePreferences/game-settings'
+004246.299| ALWAYS|                   rso-auth| RSO Response 200
+004246.302| ALWAYS|                  lol-login| lol-login: Closing session.
+004246.302|   WARN|     riot-messaging-service| Login session has gone away.
+004246.302| ALWAYS|              lol-inventory| Inventory configuration: ( AuthHeaders LoggedIn )
+004246.302| ALWAYS|                   lol-chat| RSO access token has been revoked
+004246.423|   OKAY| RemotingServerWebSocketTransport: Closing: Going Away
+004246.461|   WARN| lol-riot-messaging-service| lol-riot-messaging-service: Login session has gone away.
+004246.464| ALWAYS|              lol-inventory| Inventory configuration: ( AccountId AuthHeaders PUUID LoggedIn )
+004246.464| ALWAYS|                   lol-chat| login session deleted, will trigger shutdown
+004246.464| ALWAYS|                   lol-chat| exiting connection state 'Connected'
+004246.464| ALWAYS|                   lol-chat| entering connection state 'Stopped'
+004246.469|   OKAY|        lol-platform-config| PlatformConfigPlugin::HandleLoginDataPacket()
+004246.470|   OKAY|        lol-platform-config| PlatformConfigPlugin::HandleClientSystemStatesInternal()
+004246.470| ALWAYS|                  lol-login| lol-login: Session closed.
+004246.471| ALWAYS|                   lol-chat| plain auth creds have been revoked
+004246.473|   WARN| lol-riot-messaging-service| lol-riot-messaging-service: Login session has gone away.
+004246.473| ALWAYS|              lol-inventory| Inventory configuration: ( AccountId AuthHeaders PUUID LoggedIn )
+004246.475| ALWAYS|                   lol-chat| login session deleted, will trigger shutdown
+004246.476| ALWAYS|                  lol-login| lol-login: Logout complete.
+004246.476| ALWAYS|                  lol-login| Deleted shutdown lock lol-lobby
+004246.476| ALWAYS|                  lol-lobby| Removed shutdown lock from lol-login
+004246.476|  ERROR|                  lol-lobby| Player party state has not been initialized.
+004246.483| ALWAYS|              lol-champions| Notifying ux of champion data. Champions length: 142
+004246.484| ALWAYS|                   lol-chat| chat received lobby status: empty
+004246.484| ALWAYS|                   lol-chat| chat updating presence, availability: chat, gameStatus: outOfGame
+004246.486|  ERROR|                  lol-lobby| Player party state has not been initialized.
+004246.486| ALWAYS|           <unknown-plugin>| State is now Disconnecting.
+004246.487|   WARN|                  lol-lobby| Can't check registration status, not connected
+004246.487|   WARN|                  lol-lobby| Can't check registration status, not connected
+004246.488| ALWAYS|           <unknown-plugin>| ClientWebSocketTransport: Closing connection normally.
+004246.488|   OKAY|           <unknown-plugin>| ClientWebSocketTransport: Statistics at socket close:
+004246.488|   OKAY|           <unknown-plugin>| Reads - Count : 75   Total Bytes: 2204   Average Bytes: 29
+004246.488|   OKAY|           <unknown-plugin>| Writes - Count : 72   Total Bytes: 2447   Average Bytes: 33
+004246.488|   OKAY|           <unknown-plugin>| EINTRs: 0
+004246.488| ALWAYS|           <unknown-plugin>| State is now Disconnected.
+004246.489| ALWAYS|              lol-inventory| Inventory configuration: ( AccountId AuthHeaders PUUID LoggedIn )
+004246.490| ALWAYS|              lol-inventory| Inventory configuration: ( AccountId AuthHeaders PUUID LoggedIn )
+004246.490|   WARN|                  lol-lobby| Can't check registration status, not connected
+004246.492|   WARN|                lol-leagues| Signed data requested called while League service is not available.
+004246.493|   WARN|                  lol-lobby| Can't check registration status, not connected
+004246.493| ALWAYS|                lol-leagues| UpdateLeaguesData: Scheduling
+004246.499|   OKAY|                lol-replays| Config change FROM: { replaysEnabled=true, endOfGameEnabled=true, matchHistoryEnabled=true, patching=false, isInTournament=false, playingGame=false, playingReplay=false, loggedIn=true, gameVersion=8.19.247.3360, minServerVersion=, replayConsideredLost=30 }
+004246.499|   OKAY|                lol-replays| Config change TO  : { replaysEnabled=false, endOfGameEnabled=false, matchHistoryEnabled=false, patching=false, isInTournament=false, playingGame=false, playingReplay=false, loggedIn=true, gameVersion=8.19.247.3360, minServerVersion=, replayConsideredLost=30 }
+004246.508|   OKAY|        lol-platform-config| Namespace updated: /lol-platform-config/v1/namespaces/ClientSystemStates
+004246.516| ALWAYS|        lol-platform-config| Namespaces updated
+004246.549| ALWAYS| The following message is prepared to be sent to dradis:
+Event Name: riot__rclient__rms_disconnect_result
+common.account_id: 203247786
+common.application_name: LeagueClient
+common.game_data_build_id: 10134597
+rms.session_duration_secs: 4223
+common.client_id: lol
+common.application_version: 8.19.247.3725
+common.code_build_id: 10112348
+common.locale: en_GB
+common.content_build_id: 10112760
+common.installation_id: uyBDJw==
+common.os_version_major: 10
+common.machine_id: v7/6fi+Fxk6lmMIFSGVvQA==
+common.os_edition: Professional, x64
+common.os_platform: Windows
+common.os_version_minor: 
+common.platform_id: EUW1
+common.region: EUW
+rms.error_msg_count: 0
+rms.heartbeat_count: 69
+rms.unknown_msg_count: 0
+rms.good_msg_count: 4
+004246.550| ALWAYS| Queued Dradis event to be sent.
+004246.848|   OKAY|                  lol-lobby| Set ready retry backoff time: 10.000000
+004246.849| ALWAYS|                 voice-chat| Voice provider initialized, updating devices.
+004247.544| ALWAYS|              lol-champions| Notifying ux of champion data. Champions length: 142
+004251.123|   WARN|                  lol-login| lol-login: Couldn't find timer named LOGIN.LOGOUT.RETRY.TIMER
+004256.204|   OKAY| Failed to stop UX process gracefully, killing the process instead.
+004256.204| ALWAYS| The following message is prepared to be sent to dradis:
+Event Name: riot__rclient__event
+common.account_id: 203247786
+common.application_name: LeagueClient
+common.game_data_build_id: 10134597
+common.client_id: lol
+common.application_version: 8.19.247.3725
+common.code_build_id: 10112348
+common.locale: en_GB
+common.content_build_id: 10112760
+common.installation_id: uyBDJw==
+common.os_version_major: 10
+common.machine_id: v7/6fi+Fxk6lmMIFSGVvQA==
+common.os_edition: Professional, x64
+common.os_platform: Windows
+common.os_version_minor: 
+common.platform_id: EUW1
+common.region: EUW
+event_name: app_terminates_ux_process_tree
+004256.204| ALWAYS| Queued Dradis event to be sent.
+004256.509|   OKAY| RemotingServer: Failed to write to socket 127.0.0.1:27829. send returned: 10054
+004256.521|   OKAY| RemotingServer: Failed to read from socket 127.0.0.1:27872. recv returned: 10054
+004256.521| ALWAYS| The following message is prepared to be sent to dradis:
+Event Name: riot__rclient__hardware_performance
+hw.graphics.modelVersion1: Intel(R) HD Graphics 4600
+common.account_id: 203247786
+common.application_name: LeagueClient
+common.game_data_build_id: 10134597
+common.client_id: lol
+hw.graphics.driverVersion2: 24.21.14.1170
+common.application_version: 8.19.247.3725
+hw.system.model: To Be Filled By O.E.M.
+common.code_build_id: 10112348
+common.locale: en_GB
+hw.cpu.description: Intel(R) Core(TM) i5-4670 CPU @ 3.40GHz (4 CPUs), ~3.4GHz
+common.content_build_id: 10112760
+hw.graphics.directx: DirectX 12
+common.installation_id: uyBDJw==
+common.os_version_major: 10
+common.machine_id: v7/6fi+Fxk6lmMIFSGVvQA==
+hw.cpu.speed: 3374
+common.os_edition: Professional, x64
+hw.graphics.memory2: 2048.000
+common.os_platform: Windows
+common.os_version_minor: 
+common.platform_id: EUW1
+perf.primary.memoryuse: 99.523
+hw.graphics.modelVersion2: NVIDIA GeForce GTX 960
+common.region: EUW
+perf.primary.sysavg: 99.951
+perf.primary.memorypagedpeak: 0.381
+hw.system.manufacturer: To Be Filled By O.E.M.
+perf.primary.cpuavg: 3.456
+perf.primary.memorypvt: 146.852
+perf.primary.memorypaged: 0.381
+hw.graphics.displaywidth1: 1360
+hw.graphics.driverVersion1: 20.19.15.4835
+hw.graphics.memory1: 1024.000
+hw.cpu.sseversion: 7
+hw.graphics.displayheight1: 768
+hw.graphics.displaywidth2: 1920
+hw.graphics.displayheight2: 1080
+hw.memory.total: 16384
+004256.522| ALWAYS| Queued Dradis event to be sent.
+004256.525| ALWAYS| Peak allocator usage: 23723240
+004256.547| ALWAYS| Process Memory:
+    3741M free.
+      90M reserved.
+     264M commited.
+    Largest free block is 2043M.
+
+    PageFaultCount: 476376
+    PeakWorkingSetSize: 149M
+    WorkingSetSize: 89M
+    QuotaPeakPagedPoolUsage: 0M
+    QuotaPagedPoolUsage: 0M
+    QuotaPeakNonPagedPoolUsage: 3M
+    QuotaNonPagedPoolUsage: 0M
+    PagefileUsage: 168M
+    PeakPagefileUsage: 193M
+    PrivateUsage: 168M
+004256.557| ALWAYS| Process Info:
+    HandleCount: 1200
+    ThreadCount: 51
+    TotalHandleCount: 33365
+004256.560| ALWAYS| The following message is prepared to be sent to dradis:
+Event Name: riot__rclient__foundation_plugin_stats_summary
+common.account_id: 203247786
+common.application_name: LeagueClient
+common.game_data_build_id: 10134597
+common.client_id: lol
+common.application_version: 8.19.247.3725
+common.code_build_id: 10112348
+common.locale: en_GB
+common.content_build_id: 10112760
+common.installation_id: uyBDJw==
+common.os_version_major: 10
+common.machine_id: v7/6fi+Fxk6lmMIFSGVvQA==
+common.os_edition: Professional, x64
+common.os_platform: Windows
+common.os_version_minor: 
+common.platform_id: EUW1
+common.region: EUW
+allocatedBytes: 5052761421
+allocatedCount: 30773191
+freedBytes: 5032880876
+freedCount: 30422701
+maxOutstandingBytes: 52572594
+outstandingCount: 350490
+outstandingBytes: 19880545
+maxOutstandingCount: 799653
+004256.560| ALWAYS| Queued Dradis event to be sent.
+004256.560| ALWAYS|             Plugin Manager| ======================================================================================================================
+004256.560| ALWAYS|             Plugin Manager| Name                                   Max Outstanding     Outstanding         Allocated           Freed
+004256.560| ALWAYS|             Plugin Manager|                                        Bytes      Count    Bytes      Count    Bytes      Count    Bytes      Count
+004256.560| ALWAYS|             Plugin Manager|                          plugin totals   52572594   799653   19880545   350490  757794125 30773191  737913580 30422701
+004256.560| ALWAYS|             Plugin Manager|                              lol-store    8262507   164358    1981312    20670  328668186   937800  326686874   917130
+004256.560| ALWAYS|             Plugin Manager|                              sanitizer    6803037   185494    6334691   185302  218861699  2206269  212527008  2020967
+004256.560| ALWAYS|             Plugin Manager|                          lol-champions    4101333    89560    1325269    10586  265301721   896957  263976452   886371
+004256.560| ALWAYS|             Plugin Manager|                              lol-login    3345013    37028     106479     1450  143606359   594094  143499880   592644
+004256.560| ALWAYS|             Plugin Manager|                        lol-collections    2307380    18645     290300     2367   21074322    83204   20784022    80837
+004256.560| ALWAYS|             Plugin Manager|                               lol-loot    1783807    24196     882115    12468   10004881   101339    9122766    88871
+004256.560| ALWAYS|             Plugin Manager|                              lol-lobby    1766387    22542     606369     7097   24281647   185711   23675278   178614
+004256.605| ALWAYS|             Plugin Manager|                          lol-inventory    1498082    29743     380319     3551   13327838    79767   12947519    76216
+004256.605| ALWAYS|             Plugin Manager|                           lol-missions    1324410    17129     146876     1597   12724447    82299   12577571    80702
+004256.605| ALWAYS|             Plugin Manager|                lol-champ-select-legacy    1309063    17293     149277     1889    9520758   100404    9371481    98515
+004256.605| ALWAYS|             Plugin Manager|                    lol-recommendations    1297750    19068     137964     3664    5523097    71478    5385133    67814
+004256.605| ALWAYS|             Plugin Manager|                  lol-queue-eligibility    1258126    16654      98340     1250    4602979    55799    4504639    54549
+004256.605| ALWAYS|             Plugin Manager|                     lol-featured-modes    1251509    16458      91723     1054   11152371   114399   11060648   113345
+004256.606| ALWAYS|             Plugin Manager|                               lol-chat    1217383    12636     603180     5691 -1583409930 12931324 -1584013110 12925633
+004256.606| ALWAYS|             Plugin Manager|                 lol-player-preferences    1173535      875      54199      726   15210901     9180   15156702     8454
+004256.606| ALWAYS|             Plugin Manager|                              lol-perks    1172488     4252     261667     3034   27824624   121215   27562957   118181
+004256.606| ALWAYS|             Plugin Manager|                            lol-leagues    1122878     2298     163692     1960   15340192    73036   15176500    71076
+004256.606| ALWAYS|             Plugin Manager|                               lol-maps     746650     7253     228736     2362   20040145    79535   19811409    77173
+004256.606| ALWAYS|             Plugin Manager|                              lol-clash     505530     6498     423297     5667   13763057    72509   13339760    66842
+004256.606| ALWAYS|             Plugin Manager|                      lol-game-settings     480405     2672     160067     3130   72398899   163800   72238832   160670
+004256.607| ALWAYS|             Plugin Manager|                        lol-game-queues     444195     2276     203804     2233   17890608    72438   17686804    70205
+004256.607| ALWAYS|             Plugin Manager|                           lol-honor-v2     431194     3311     104644     1483    8646377    64025    8541733    62542
+004256.607| ALWAYS|             Plugin Manager|                        lol-end-of-game     430491     4729     138137     1781    8022339    66915    7884202    65134
+004256.607| ALWAYS|             Plugin Manager|                           lol-loadouts     429079     1386      86847     1285    6117449    47959    6030602    46674
+004256.607| ALWAYS|             Plugin Manager|                    lol-platform-config     418302     5656      94017      876   16415830   106275   16321813   105399
+004256.607| ALWAYS|             Plugin Manager|                           lol-gameflow     401055     3093     147848     2075   72754886   571016   72607038   568941
+004256.607| ALWAYS|             Plugin Manager|                                lol-pft     366902     2931      80278     1040    6495456    53422    6415178    52382
+004256.607| ALWAYS|             Plugin Manager|                            lol-replays     292834     1427      98625     1449   11071346    58034   10972721    56585
+004256.607| ALWAYS|             Plugin Manager|                  lol-license-agreement     272767      766      89239      726     726605     1224     637366      498
+004256.607| ALWAYS|             Plugin Manager|                 lol-lobby-team-builder     269443     3202     241865     2943    6627460    60573    6385595    57630
+004256.607| ALWAYS|             Plugin Manager|                  lol-npe-tutorial-path     253084     2432     130670     1684    7095139    62547    6964469    60863
+004256.607| ALWAYS|             Plugin Manager|                           lol-settings     199708     1750      89136     1097   10448687    97329   10359551    96232
+004256.607| ALWAYS|             Plugin Manager|                      lol-match-history     199700     2619     105325     1393    1114248     9690    1008923     8297
+004256.607| ALWAYS|             Plugin Manager|                           lol-summoner     192286     2494     137528     1741    5801350    25255    5663822    23514
+004256.607| ALWAYS|             Plugin Manager|                              lol-clubs     172641     2105     138792     1981    5413023    15448    5274231    13467
+004256.607| ALWAYS|             Plugin Manager|                    lol-player-behavior     168584     2023      85095     1196    5171219    47301    5086124    46105
+004256.607| ALWAYS|             Plugin Manager|        lol-esport-stream-notifications     155523     1831      73090     1018    1906661    17406    1833571    16388
+004256.607| ALWAYS|             Plugin Manager|                                patcher     154706     1787     106439     1419  405331308  5329487  405224869  5328068
+004256.607| ALWAYS|             Plugin Manager|                 riot-messaging-service     149763      912     127855      862     723042     3984     595187     3122
+004256.607| ALWAYS|             Plugin Manager|                      lol-premade-voice     143493     2003     115883     1743    8444504    73219    8328621    71476
+004256.607| ALWAYS|             Plugin Manager|                        lol-matchmaking     142386     2002     110808     1624    5184998    48270    5074190    46646
+004256.608| ALWAYS|             Plugin Manager|                             voice-chat     138574     1838     114312     1567    1703504    13487    1589192    11920
+004256.608| ALWAYS|             Plugin Manager|                      gcloud-voice-chat     137558     1907     108380     1567     323422     3198     215042     1631
+004256.608| ALWAYS|             Plugin Manager|                    lol-kr-shutdown-law     135200     1582      51711      755     171044     2027     119333     1272
+004256.608| ALWAYS|             Plugin Manager|                                lol-acs     133862     3017      92937      924    8144384    30460    8051447    29536
+004256.608| ALWAYS|             Plugin Manager|                           recofriender     132130     1848      95541     1552    3766519    24020    3670978    22468
+004256.608| ALWAYS|             Plugin Manager|                     lol-service-status     122822     1485      67476      917    1947706     7743    1880230     6826
+004256.608| ALWAYS|             Plugin Manager|                      lol-leaver-buster     117586     1444      61880      891     152624     1818      90744      927
+004256.608| ALWAYS|             Plugin Manager|                      lol-active-boosts     116921     1302      50611      722     396038     2896     345427     2174
+004256.608| ALWAYS|             Plugin Manager|                   lol-player-messaging     114240     1380      58534      827     156869     1856      98335     1029
+004256.608| ALWAYS|             Plugin Manager|             lol-simple-dialog-messages     113003     1384      57297      831    5030527    45717    4973230    44886
+004256.608| ALWAYS|             Plugin Manager|                               rso-auth     108624     1376      81785     1192    1812528    11792    1730743    10600
+004256.608| ALWAYS|             Plugin Manager|                  lol-content-targeting     104355     1163      77459     1063    1821960    12562    1744501    11499
+004256.608| ALWAYS|             Plugin Manager|                  lol-suggested-players     103298     1294      68237     1055    3788826    23723    3720589    22668
+004256.608| ALWAYS|             Plugin Manager|                              lol-patch     100152     1375      88125     1301  395661794  4383383  395573669  4382082
+004256.608| ALWAYS|             Plugin Manager|                       lol-champ-select      98502     1439      94381     1400     209728     2859     115347     1459
+004256.608| ALWAYS|             Plugin Manager|                            lol-regalia      97500     1436      74610     1233    8735841    60913    8661231    59680
+004256.608| ALWAYS|             Plugin Manager|                lol-personalized-offers      96790     1208      74441     1122     271675     2225     197234     1103
+004256.608| ALWAYS|             Plugin Manager|                       lol-career-stats      94058     1259      83742     1216     213642     2064     129900      848
+004256.608| ALWAYS|             Plugin Manager|                  lol-worlds-token-card      93953     1052      46864      690     408401     3022     361537     2332
+004256.608| ALWAYS|             Plugin Manager|                       lol-clubs-public      93272      944      73160      855   16198780    83345   16125620    82490
+004256.608| ALWAYS|             Plugin Manager|                       lol-ranked-stats      87588     1012      64132      958     376134     2668     312002     1710
+004256.609| ALWAYS|             Plugin Manager|                    lol-player-level-up      87253     1094      53907      829     322695     2793     268788     1964
+004256.609| ALWAYS|             Plugin Manager|                           entitlements      85737      830      44533      641    1150720     5733    1106187     5092
+004256.609| ALWAYS|             Plugin Manager|                    lol-pre-end-of-game      85190     1023      48816      743    5194916    46836    5146100    46093
+004256.609| ALWAYS|             Plugin Manager|                   lol-game-client-chat      85037     1109      51354      803   26990180    85784   26938826    84981
+004256.609| ALWAYS|             Plugin Manager|                                  patch      84081     1253      79449     1136     112341     1544      32892      408
+004256.609| ALWAYS|             Plugin Manager|                            lol-catalog      79504     1085      54150      815     175528     1927     121378     1112
+004256.609| ALWAYS|             Plugin Manager|                    lol-purchase-widget      79294      994      60850      941     181858     1692     121008      751
+004256.609| ALWAYS|             Plugin Manager|                 lol-email-verification      78203     1106      48785      761     254487     2048     205702     1287
+004256.609| ALWAYS|             Plugin Manager|               lol-account-verification      75223      977      60467      937     243675     1988     183208     1051
+004256.609| ALWAYS|             Plugin Manager|                    lol-user-experience      73557      935      43054      670    5076715    45507    5033661    44837
+004256.609| ALWAYS|             Plugin Manager|                         lol-highlights      72282      926      57114      879     224454     1816     167340      937
+004256.609| ALWAYS|             Plugin Manager|                          lol-item-sets      69069      875      54345      838     364890     4868     310545     4030
+004256.609| ALWAYS|             Plugin Manager|             lol-riot-messaging-service      68278      646      38246      591     135302     1009      97056      418
+004256.609| ALWAYS|             Plugin Manager|                        network-testing      67947      835      65367      770      87559     1039      22192      269
+004256.609| ALWAYS|             Plugin Manager|                            lol-geoinfo      65517      820      48540      747     361513     2192     312973     1445
+004256.609| ALWAYS|             Plugin Manager|                   player-notifications      64335      872      54635      840     187629     2506     132994     1666
+004256.609| ALWAYS|             Plugin Manager|                            lol-banners      62030      936      58494      910      94494     1335      36000      425
+004256.609| ALWAYS|             Plugin Manager|                            lol-loyalty      60912      807      50688      775     181143     1436     130455      661
+004256.609| ALWAYS|             Plugin Manager|                          lol-spectator      59459      781      45903      723     237411     1701     191508      978
+004256.609| ALWAYS|             Plugin Manager|                          lol-heartbeat      56227      664      41489      639     863793     3207     822304     2568
+004256.609| ALWAYS|             Plugin Manager|                            lol-kickout      53721      646      39665      589     232839     1689     193174     1100
+004256.609| ALWAYS|             Plugin Manager|                           lol-shutdown      53570      725      44170      688    1044195    17983    1000025    17295
+004256.609| ALWAYS|             Plugin Manager|                         lol-discord-rp      53064      724      41546      670    1288069    19068    1246523    18398
+004256.610| ALWAYS|             Plugin Manager|                           lol-trophies      51903      776      48367      750      75699     1059      27332      309
+004256.610| ALWAYS|             Plugin Manager|                               payments      51376      717      44924      686      69912      932      24988      246
+004256.610| ALWAYS|             Plugin Manager|                         lol-tencent-qt      49774      706      43506      675      68654      918      25148      243
+004256.610| ALWAYS|             Plugin Manager|               lol-kr-playtime-reminder      44654      659      40769      642      60780      867      20011      225
+004256.610| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-career-stats
+004256.661| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-account-verification
+004256.731| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-discord-rp
+004256.769| ALWAYS| The following message is prepared to be sent to dradis:
+Event Name: riot__rclient__discord_rpc__stats
+common.account_id: 203247786
+common.application_name: LeagueClient
+common.game_data_build_id: 10134597
+common.client_id: lol
+common.application_version: 8.19.247.3725
+common.code_build_id: 10112348
+common.locale: en_GB
+common.content_build_id: 10112760
+common.installation_id: uyBDJw==
+common.os_version_major: 10
+common.machine_id: v7/6fi+Fxk6lmMIFSGVvQA==
+common.os_edition: Professional, x64
+common.os_platform: Windows
+common.os_version_minor: 
+common.platform_id: EUW1
+common.region: EUW
+ready: 1
+summonerId: 44610239
+004256.769| ALWAYS| Queued Dradis event to be sent.
+004256.785| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-perks
+004256.797| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-trophies
+004256.805| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-banners
+004256.823| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-payments
+004256.837| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-worlds-token-card
+004256.849| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-regalia
+004256.849|   OKAY|                  lol-lobby| Set ready retry backoff time: 10.000000
+004256.865| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-catalog
+004256.871| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-npe-tutorial-path
+004256.891| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-featured-modes
+004256.916| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-premade-voice
+004256.947| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-gcloud-voice-chat
+004256.952| ALWAYS|          gcloud-voice-chat| Stopping the GCloud voice chat service...
+004256.952| ALWAYS|          gcloud-voice-chat| GCloud voice chat service has stopped.
+004256.964| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-voice-chat
+004256.964| ALWAYS|                 voice-chat| Stopping the voice chat service...
+004257.101| ALWAYS|                 voice-chat| Voice chat service has stopped.
+004257.102| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-replays
+004257.118| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-clash
+004257.144| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-content-targeting
+004257.182| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-geoinfo
+004257.214| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-email-verification
+004257.228| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-item-sets
+004257.254| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-missions
+004257.277| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-network-testing
+004257.277| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-honor-v2
+004257.283| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-highlights
+004257.298| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-simple-dialog-messages
+004257.315| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-user-experience
+004257.336| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-recommendations
+004257.355| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-personalized-offers
+004257.368| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-purchase-widget
+004257.382| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-player-messaging
+004257.387| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-tencent-qt
+004257.417| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-player-level-up
+004257.425| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-esport-stream-notifications
+004257.426| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-clubs-public
+004257.442| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-clubs
+004257.482| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-recofriender
+004257.502| ALWAYS|               recofriender| shutting down...
+004257.502| ALWAYS|               recofriender| shutdown complete.
+004257.512| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-match-history
+004257.543| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-leaver-buster
+004257.556| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-service-status
+004257.557| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-suggested-players
+004257.573| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-player-behavior
+004257.601| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-pft
+004257.641| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-active-boosts
+004257.663| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-end-of-game
+004257.663| ALWAYS|            lol-end-of-game| Exiting state 'BeforeEndOfGame'
+004257.663| ALWAYS|            lol-end-of-game| Exiting state 'EoG_Flow'
+004257.673| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-game-client-chat
+004257.692| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-kr-playtime-reminder
+004257.703| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-license-agreement
+004257.704| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-kickout
+004257.705| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-loot
+004257.719| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-shutdown
+004257.722| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-heartbeat
+004257.723| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-loadouts
+004257.723| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-champ-select
+004257.724| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-champ-select-legacy
+004257.724| ALWAYS|    lol-champ-select-legacy| lol-champ-select-legacy: ChampSelect: exiting state 'NoSelections'
+004257.724| ALWAYS|    lol-champ-select-legacy| lol-champ-select-legacy: ChampSelect: exiting state 'NotSelecting'
+004257.724| ALWAYS|    lol-champ-select-legacy| lol-champ-select-legacy: ChampSelect: exiting state 'ChampSelect'
+004257.746| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-lobby
+004257.747| ALWAYS|                  lol-login| Deleted shutdown lock lol-lobby
+004257.747| ALWAYS|                  lol-lobby| Removed shutdown lock from lol-login
+004257.747|  ERROR|                  lol-lobby| Player party state has not been initialized.
+004257.747|   WARN| Couldn't queue job "Timer: lol-lobby.parties-presence-270" to module lol-lobby because the module is stopped.
+004257.747|  ERROR|                  lol-lobby| Player party state has not been initialized.
+004257.747| ALWAYS|                  lol-lobby| LobbyFlow: exiting state 'OutOfLobby'
+004257.748| ALWAYS|                  lol-lobby| LobbyFlow: exiting state 'LobbyFlow'
+004257.757| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-chat
+004257.757|   WARN|                   lol-chat| finalizing chat plugin
+004257.758| ALWAYS|                   lol-chat| chat connection state change : Session closed, possibly due to error (4)
+004257.758| ALWAYS|                   lol-chat| disconnected from the chat service because 'Xmpp Client state changed to closed!'...
+004257.758|   WARN|                   lol-chat| chat session disconnected - Xmpp Client state changed to closed!
+004257.759|   WARN|                   lol-chat| chat plugin finalize complete.
+004257.759| ALWAYS|                   lol-chat| exiting connection state 'Stopped'
+004257.759| ALWAYS|                   lol-chat| exiting connection state 'Connector_Flow'
+004257.779| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-spectator
+004257.816| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-matchmaking
+004257.816| ALWAYS|            lol-matchmaking| Matchmaking: exiting state 'Available'
+004257.816| ALWAYS|            lol-matchmaking| Matchmaking: exiting state 'Matchmaking'
+004257.851| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-queue-eligibility
+004257.864| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-lobby-team-builder
+004257.907| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-inventory
+004257.911| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-store
+004257.930| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-leagues
+004257.942| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-kr-shutdown-law
+004257.943| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-champions
+004257.984| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-collections
+004257.998| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-loyalty
+004258.014| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-player-notifications
+004258.014| ALWAYS|       player-notifications| PlayerNotificationsPlugin::Finalize: shutting down...
+004258.014| ALWAYS|       player-notifications| PlayerNotificationsPlugin::Finalize: shutdown complete.
+004258.015| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-acs
+004258.054| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-riot-messaging-service
+004258.072| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-sanitizer
+004258.072| ALWAYS|                  sanitizer| Finalize: shutting down...
+004258.072| ALWAYS|                  sanitizer| Finalize: shutdown complete.
+004258.169| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-pre-end-of-game
+004258.211| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-gameflow
+004258.236| ALWAYS|               lol-gameflow| Gameflow: exiting state 'None'
+004258.236| ALWAYS|               lol-gameflow| Gameflow: exiting state 'Gameflow'
+004258.254| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-settings
+004258.255| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-game-settings
+004258.334| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-player-preferences
+004258.335|   WARN| Couldn't queue job "Event: OnJsonApiEvent_lol-player-preferences_v1_player-preferences-ready" to module lol-perks because the module is stopped.
+004258.370| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-game-queues
+004258.387| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-maps
+004258.408| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-ranked-stats
+004258.409| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-summoner
+004258.410| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-platform-config
+004258.416| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-login
+004258.446| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-patcher
+004258.446| ALWAYS|                    patcher| Background Patcher set enable check for updates to 0.
+004258.446| ALWAYS|                    patcher| Background Patcher set enable check for updates to 0.
+004258.446| ALWAYS|                    patcher| Background Patcher set enable update product to 0.
+004258.446| ALWAYS|                    patcher| Background Patcher set enable update product to 0.
+004258.487| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-lol-patch
+004258.488| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-entitlements
+004258.502| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-riot-messaging-service
+004258.524| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-rso-auth
+004258.538| ALWAYS|             Plugin Manager| Finalizing plugin rcp-be-patch
+004258.631| ALWAYS| The following message is prepared to be sent to dradis:
+Event Name: riot__rclient__event
+common.account_id: 203247786
+common.application_name: LeagueClient
+common.game_data_build_id: 10134597
+common.client_id: lol
+common.application_version: 8.19.247.3725
+common.code_build_id: 10112348
+common.locale: en_GB
+common.content_build_id: 10112760
+common.installation_id: uyBDJw==
+common.os_version_major: 10
+common.machine_id: v7/6fi+Fxk6lmMIFSGVvQA==
+common.os_edition: Professional, x64
+common.os_platform: Windows
+common.os_version_minor: 
+common.platform_id: EUW1
+common.region: EUW
+event_name: app_terminate
+004258.631| ALWAYS| Queued Dradis event to be sent.
+004258.711|   OKAY| EventCollector: 5 events remaining after thread join
+004259.544|   OKAY| Shut down EventCollector in 849 milliseconds
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             dth + barGap) + (cur * barWidth)),
 				xScale * series._values[i], yScale * barWidth);
 			graph._showStatus(r, series._name, series._values[i]);
 		}

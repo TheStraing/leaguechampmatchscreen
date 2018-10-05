@@ -1,7 +1,12 @@
-var APIKEY = 'RGAPI-8177f7a6-a255-4f94-84d8-808957464f8f';
-
+var team1 = "";
+var team2 = "";
+var summ = "";
+var isIn = false;
+var isUpdated = false;
 $(document).ready(function() {
 
+
+    //fadeIn();
 
     /*$('.playername').each(function () {
         $(this).textfill({
@@ -10,9 +15,149 @@ $(document).ready(function() {
     });*/
 
     /*$('.team').find('[data-id=4]').find('.playername')[0].innerHTML*/
-    getCurrentMatchData('Kaymax','Team1','Team2');
+    //getCurrentMatchData('MrsGlacia','Team1','Team2');
+
+    setInterval(checkForFade,500);
+    setInterval(checkForDataUpdate,500);
 
 });
+
+
+
+function checkForFade() {
+    $.ajax({
+        url: "./data/fade.txt",
+        async: false,
+        success: function (data){
+            //console.log("data: "+data);
+            if(isIn && data === '0') fadeOut();
+            if(!isIn && data === '1') fadeIn();
+
+        }
+    });
+}
+
+function checkForDataUpdate() {
+    $.ajax({
+        url: "./data/updateData.txt",
+        async: false,
+        success: function (data){
+            //console.log("data: "+data);
+            /*if(isIn && data === '0') fadeOut();
+            if(!isIn && data === '1') fadeIn();*/
+
+            if(data === '1' && !isUpdated) {
+
+
+                isUpdated = true;
+                getTeam1();
+                getTeam2();
+                getSummoner();
+                setTimeout(function () {
+                    getCurrentMatchData(summ,team1,team2);
+                },1000);
+
+
+            }
+
+            if( data === '0' && isUpdated) {
+                isUpdated = false;
+            }
+
+        }
+    });
+}
+
+
+function getTeam1() {
+    $.ajax({
+        url: "./data/team1.txt",
+        async: false,
+        success: function (data){
+            //console.log("data: "+data);
+            team1 = data;
+        }
+    });
+}
+
+function getTeam2() {
+    $.ajax({
+        url: "./data/team2.txt",
+        async: false,
+        success: function (data){
+            //console.log("data: "+data);
+            team2 = data;
+        }
+    });
+}
+
+function getSummoner() {
+    $.ajax({
+        url: "./data/summ.txt",
+        async: false,
+        success: function (data){
+            //console.log("data: "+data);
+            summ = data;
+        }
+    });
+}
+
+
+function fadeIn(){
+
+    setTimeout(function () {
+        setTimeout(function () {
+            $('.toptextdiv').css('transform','translate(-50%,0%');
+            $('#topbox').css('transform','translate(-50%,0%');
+            $('#topbar').css('transform','translate(-50%,-23.5%) scale(1.1,1.1)');
+        },2000);
+        setTimeout(function () {
+            $('.teamname').css('transform','translateY(0%)');
+        },3000);
+        setTimeout(function () {
+            $('#lowerbar').css('transform','scaleX(1.03) translateY(0%)');
+            $('.lowertext').css('transform','translate(-50%,0%)');
+            $('#lowerbox').css('transform','translate(-50%,0%)');
+        },4000);
+        $('.leftside').each(function(){
+            $(this).css('transform','translateX(-0.4vh)');
+        });
+        $('.rightside').each(function(){
+            $(this).css('transform','rotateY(180deg) translateX(4.9vh)');
+        });
+        setTimeout(function () {
+            $('#bg').css('opacity','1');
+        },800);
+        isIn = true;
+
+    },1000);
+
+}
+
+function fadeOut(){
+
+    setTimeout(function () {
+        $('.toptextdiv').css('transform','translate(-50%,-100%');
+        $('#topbox').css('transform','translate(-50%,-100%');
+        $('#topbar').css('transform','translate(-50%,-100%) scale(1.1,1.1)');
+        $('.teamname').css('transform','translateY(-200%)');
+        $('#lowerbar').css('transform','scaleX(1.03) translateY(100%)');
+        $('.lowertext').css('transform','translate(-50%,200%)');
+        $('#lowerbox').css('transform','translate(-50%,100%)');
+        $('.leftside').each(function(){
+            $(this).css('transform','translateX(-100%)');
+        });
+        $('.rightside').each(function(){
+            $(this).css('transform','rotateY(180deg) translateX(-100%)');
+        });
+        setTimeout(function () {
+            $('#bg').css('opacity','0');
+        },800);
+        isIn = false;
+
+    },1000);
+
+}
 
 
 function getCurrentMatchData(summonername,team1,team2) {

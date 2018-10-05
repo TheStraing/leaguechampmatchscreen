@@ -10,6 +10,10 @@ body {
     left: 0;
     z-index: -99;
     width: 100vw;
+    opacity: 0;
+    transition: opacity 1.5s ease-in-out;
+    will-change: opacity;
+
 }
 
 #bg img {
@@ -19,14 +23,17 @@ body {
 #lowerbar {
     position: absolute;
     bottom: 0;
-    transform: scaleX(1.03);
+    transform: scaleX(1.03) translateY(100%);
+    transition: transform 1.5s ease-in-out;
 }
 
 #topbar {
     position: absolute;
     top: 0;
     left: 50vw;
-    transform: translate(-50%,-23.5%) scale(1.1,1.1);
+    transition: transform 1.5s ease-in-out;
+    transform: translate(-50%,-100%) scale(1.1,1.1);
+    /*transform: translate(-50%,-23.5%) scale(1.1,1.1);*/
 }
 
 #topbox {
@@ -36,7 +43,9 @@ body {
     z-index: 2;
     width: 26.5vw;
     left: 50vw;
-    transform: translateX(-50%);
+    /*transform: translateX(-50%);*/
+    transform: translate(-50%,-100%);
+    transition: transform 1.5s ease-in-out;
 
 }
 
@@ -48,7 +57,9 @@ body {
     width: 25vw;
     height: 14vh;
     left: 50vw;
-    transform: translateX(-50%);
+    /*transform: translateX(-50%);*/
+    transform: translate(-50%,-100%);
+    transition: transform 1.5s ease-in-out;
     font-family: "Bebas Neue";
     z-index: 4;
 }
@@ -74,7 +85,8 @@ body {
     width: 26.5vw;
     height: 4vh;
     left: 50vw;
-    transform: translateX(-50%);
+    transform: translate(-50%,200%);
+    transition: transform 1.5s ease-in-out;
     font-family: "Bebas Neue";
     z-index: 4;
 }
@@ -92,7 +104,8 @@ body {
     bottom: 0;
     width: 30vw;
     left: 50vw;
-    transform: translateX(-50%);
+    transition: transform 1.5s ease-in-out;
+    transform: translate(-50%,100%);
     z-index: 2;
 }
 
@@ -263,15 +276,21 @@ body {
     border-radius: 7px;
     background-color: #C1272D;
     -webkit-mask-image: -webkit-linear-gradient(left, rgba(0,0,0,1) 26%,rgba(0,0,0,1) 80%,rgba(0,0,0,0) 100%);
+
 }
 
 .leftside{
-    transform: translateX(-0.4vh);
-
+    /*transform: translateX(-0.4vh);*/
+    transition: transform 1.5s ease-in-out;
+    transform: translateX(-100%);
+    will-change: transform;
 }
 
 .rightside{
-    transform: rotateY(180deg) translateX(4.9vh);
+    /*transform: rotateY(180deg) translateX(4.9vh);*/
+    transition: transform 1.5s ease-in-out;
+    transform: rotateY(180deg) translateX(-100%);
+    will-change: transform;
 }
 
 .flipped{
@@ -283,6 +302,8 @@ body {
     top: 5vh;
     height: 7vh;
     width: 35vw;
+    transform: translateY(-200%);
+    transition: transform 2s ease-in-out;
     background-size: cover;
     background-position: center center;
     background-image: url(../graphics/teamnamebox.svg);
